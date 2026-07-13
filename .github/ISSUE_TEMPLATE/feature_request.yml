@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a focused addition or change to the helm platform.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: User need
+      description: What user or contributor problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful change.
+    validations:
+      required: true
+  - type: textarea
+    id: existing
+    attributes:
+      label: Existing surfaces considered
+      description: Explain why the current platform, profile, service, or UI primitives cannot compose the requested result.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and tradeoffs
+      description: Note affected markets, accessibility considerations, compatibility, or alternatives.

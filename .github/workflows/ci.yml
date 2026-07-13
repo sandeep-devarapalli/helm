@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify web and UI
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+
+      - name: Verify API and worker
+        run: |
+          uv sync --frozen --all-groups
+          uv run ruff check .
+          uv run mypy services
+          uv run pytest
+          uv lock --check
+          uv run alembic upgrade head --sql >/dev/null
+          uv run python -m helm_worker health
+
+      - name: Validate Compose
+        run: docker compose -f infra/docker-compose.yml config >/dev/null
+
+      - name: Check required public files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in LICENSE README.md AGENTS.md CONTRIBUTING.md SECURITY.md THIRD_PARTY_NOTICES.md docs/brand/design.md runtime/hermes.lock runtime/vibe.lock; do
+            test -f "$path" || { echo "Missing required file: $path"; exit 1; }
+          done
+
+      - name: Reject private and unlicensed source-reference files
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden=(
+            "uploads/Screenshot 2026-07-09 at 10.52.52.png"
+            "uploads/Screenshot 2026-07-09 at 10.53.04.png"
+            "assets/icon.png"
+            "assets/feature-cross-market-data-backtesting.png"
+            "assets/feature-multi-agent-trading-teams.png"
+            "assets/feature-self-improving-trading-agent.png"
+            "assets/feature-shadow-account.png"
+            "templates/trading-console/support.js"
+          )
+          for path in "${forbidden[@]}"; do
+            if git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
+              echo "Forbidden public file is tracked: $path"
+              exit 1
+            fi
+          done
+
+      - name: Validate design-reference JSON
+        run: |
+          python3 -m json.tool examples/design-reference/_ds_manifest.json >/dev/null
+          python3 -m json.tool examples/design-reference/_adherence.oxlintrc.json >/dev/null
+
+      - name: Scan tracked text for high-confidence secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          patterns='BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}'
+          if git grep -nEI "$patterns" -- ':!*.png' ':!*.webp'; then
+            echo "Potential credential found in tracked files."
+            exit 1
+          fi

@@ -1,0 +1,47 @@
+_config_version: 33
+
+skills:
+  write_approval: true
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  memory_char_limit: 2200
+  user_char_limit: 1375
+  write_approval: true
+
+agent:
+  disabled_toolsets:
+    - terminal
+    - file
+    - browser
+    - web
+    - search
+    - vision
+    - image_gen
+    - tts
+    - messaging
+    - homeassistant
+    - spotify
+    - discord_admin
+    - code_execution
+    - rl
+
+mcp_servers:
+  vibe_trading:
+    url: "http://vibe-mcp:8900/sse"
+    transport: sse
+    enabled: true
+    supports_parallel_tool_calls: true
+    sampling:
+      enabled: false
+    tools:
+      include:
+        - search_symbol
+        - get_market_data
+        - get_financial_statements
+        - get_stock_profile
+        - get_stock_news
+        - get_sec_filings
+      prompts: false
+      resources: false

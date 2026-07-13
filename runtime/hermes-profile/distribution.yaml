@@ -1,0 +1,12 @@
+name: helm-operator
+version: 0.1.0
+description: "Hermes profile for the helm conversational AI-trading platform"
+hermes_requires: ">=0.16.0"
+author: "helm contributors"
+license: "MIT"
+distribution_owned:
+  - SOUL.md
+  - config.yaml
+  - mcp.json
+  - skills/
+  - cron/

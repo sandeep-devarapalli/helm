@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "vibe_trading": {
+      "url": "http://vibe-mcp:8900/sse",
+      "transport": "sse",
+      "enabled": true,
+      "supportsParallelToolCalls": true,
+      "enabledTools": [
+        "search_symbol",
+        "get_market_data",
+        "get_financial_statements",
+        "get_stock_profile",
+        "get_stock_news",
+        "get_sec_filings"
+      ]
+    }
+  }
+}

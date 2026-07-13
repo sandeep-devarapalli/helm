@@ -1,0 +1,64 @@
+/* ==========================================================================
+   Helm — Base element defaults
+   Paper background, ink text, Plex Sans. Links are blue. Numbers opt into
+   mono via .font-mono / [data-numeric].
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Numerics always mono + tabular */
+.font-mono,
+[data-numeric] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: var(--color-link);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+a:hover {
+  color: hsl(217 72% 42%);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+::selection {
+  background: hsl(152 40% 88%);
+}
+
+/* Quiet light scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-faint); background-clip: content-box; }
+
+@keyframes helm-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes helm-blink {
+  0%, 60%, 100% { opacity: .25; }
+  30% { opacity: 1; }
+}

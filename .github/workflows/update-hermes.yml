@@ -1,0 +1,80 @@
+name: Propose Hermes Agent update
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve latest stable release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$(gh api repos/NousResearch/hermes-agent/releases/latest --jq .tag_name)
+          current=$(jq -r .release runtime/hermes.lock)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == "$current" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          digest=$(docker buildx imagetools inspect "docker.io/nousresearch/hermes-agent:${tag}" | awk '/^Digest:/ {print $2; exit}')
+          commit=$(git ls-remote "https://github.com/NousResearch/hermes-agent.git" "refs/tags/${tag}^{}" | awk '{print $1}')
+          if [[ -z "$commit" ]]; then
+            commit=$(git ls-remote "https://github.com/NousResearch/hermes-agent.git" "refs/tags/${tag}" | awk '{print $1}')
+          fi
+          today=$(date -u +%F)
+          jq --arg release "$tag" --arg commit "$commit" --arg digest "$digest" --arg date "$today" \
+            '.release=$release | .commit=$commit | .image=("docker.io/nousresearch/hermes-agent:"+$release) | .digest=$digest | .verified_at=$date | .compatibility="pending"' \
+            runtime/hermes.lock > runtime/hermes.lock.tmp
+          mv runtime/hermes.lock.tmp runtime/hermes.lock
+          sed -i -E "s#image: docker.io/nousresearch/hermes-agent:[^@]+@sha256:[a-f0-9]+#image: docker.io/nousresearch/hermes-agent:${tag}@${digest}#" infra/docker-compose.yml
+          sed -i -E "s#HELM_HERMES_VERSION: v[0-9.]+#HELM_HERMES_VERSION: ${tag}#" infra/docker-compose.yml
+          python3 - "$tag" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          path = Path("THIRD_PARTY_NOTICES.md")
+          path.write_text(
+              re.sub(r"Hermes Agent `[^`]+`", f"Hermes Agent `{sys.argv[1]}`", path.read_text())
+          )
+          PY
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open compatibility-review pull request
+        if: steps.release.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="automation/hermes-${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add runtime/hermes.lock infra/docker-compose.yml THIRD_PARTY_NOTICES.md
+          git commit -m "chore: review Hermes ${TAG}"
+          git push --force-with-lease origin "$branch"
+          if gh pr view "$branch" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "chore: review Hermes ${TAG}" \
+            --body "Updates the immutable Hermes runtime pin. Compatibility remains pending until helm CI and a maintainer complete the safety review. Do not merge on version freshness alone."

@@ -1,0 +1,57 @@
+<!-- @dsCard group="Components" viewport="700x250" name="Surfaces" subtitle="Card, Badge, Chip (incl. entity pill)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body { margin: 0; padding: 22px; background: var(--color-bg); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .row:last-child { margin-bottom: 0; }
+  .ct { font: var(--weight-semibold) var(--text-base)/1.2 var(--font-sans); color: var(--color-text); margin-bottom: 4px; }
+  .cd { font: var(--text-sm)/1.5 var(--font-sans); color: var(--color-text-muted); }
+  .lbl { width: 60px; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--color-text-faint); flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+  const { Card, Badge, Chip } = window.EmberDesignSystem_fc1096;
+  const Bank = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M4 18h16M6 18V9M10 18V9M14 18V9M18 18V9M12 3 2 9h20L12 3z"/></svg>;
+  ReactDOM.createRoot(document.getElementById("root")).render(
+    <>
+      <div className="grid">
+        <Card>
+          <div className="ct">Panel card</div>
+          <div className="cd">Quiet gray fill — stat blocks, consensus cards.</div>
+        </Card>
+        <Card tone="accent">
+          <div className="ct">Accent card</div>
+          <div className="cd">Green hairline — agent proposals awaiting consent.</div>
+        </Card>
+      </div>
+      <div className="row">
+        <span className="lbl">Badges</span>
+        <Badge tone="success">Buy</Badge>
+        <Badge tone="ink">Running</Badge>
+        <Badge tone="danger">7 Bearish</Badge>
+        <Badge tone="warning">Blocked</Badge>
+        <Badge tone="info">Draft</Badge>
+        <Badge>Hold</Badge>
+      </div>
+      <div className="row">
+        <span className="lbl">Chips</span>
+        <span style={{font:"var(--text-base)/1.6 var(--font-sans)", color:"var(--color-text)"}}>How does <Chip tone="entity" icon={Bank}>NVDA</Chip> compare to <Chip tone="entity" icon={Bank}>AMD</Chip>?</span>
+        <Chip selected>Momentum</Chip>
+        <Chip>Quality</Chip>
+      </div>
+    </>
+  );
+</script>
+</body>
+</html>

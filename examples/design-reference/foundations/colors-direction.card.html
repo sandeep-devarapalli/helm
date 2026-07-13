@@ -1,0 +1,20 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Market direction in use" subtitle="Signed mono figures + consensus pills" -->
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><link rel="stylesheet" href="../styles.css"/>
+<style>
+  body{margin:0;padding:20px;background:var(--color-bg);display:flex;gap:24px;font-family:var(--font-mono);align-items:center}
+  .big{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--color-text)}
+  .chg{font-size:15px;font-weight:500;font-variant-numeric:tabular-nums}
+  .pill{border-radius:var(--radius-sm);padding:4px 12px;font-family:var(--font-sans);font-size:var(--text-sm);font-weight:600}
+  .col{display:flex;flex-direction:column;gap:4px}
+  .lbl{font-family:var(--font-sans);font-size:var(--text-xs);color:var(--color-text-muted)}
+</style></head>
+<body>
+  <div class="col"><span class="big">$305.24</span><span class="chg" style="color:var(--color-up)">+$10.86 (+3.69%)</span></div>
+  <div class="col"><span class="big">$188.02</span><span class="chg" style="color:var(--color-down)">-$4.11 (-2.14%)</span></div>
+  <div class="col" style="gap:8px">
+    <span class="pill" style="background:var(--color-success-soft);color:var(--color-success);width:fit-content">Buy</span>
+    <span class="lbl"><span style="color:var(--color-danger)">7 Bearish</span> · 34 Neutral · <span style="color:var(--color-success)">70 Bullish</span></span>
+  </div>
+</body></html>

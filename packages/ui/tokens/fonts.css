@@ -1,0 +1,8 @@
+/* ==========================================================================
+   Helm — Web fonts
+   IBM Plex Sans (UI / display) + IBM Plex Mono (wordmark, numerals, tickers).
+   Sourced from Google Fonts. Swap for self-hosted @font-face if binaries
+   are provided — the family names below are what the tokens expect.
+   ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");

@@ -1,0 +1,45 @@
+<!-- @dsCard group="Components" viewport="700x210" name="Data display" subtitle="MetricTile stat grid + ProgressBar" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body { margin: 0; padding: 22px; background: var(--color-bg); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-panel); overflow: hidden; margin-bottom: 16px; }
+  .stats > * { border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+  .stats > *:nth-child(3n) { border-right: none; }
+  .stats > *:nth-last-child(-n+3) { border-bottom: none; }
+  .bars { display: grid; gap: 12px; max-width: 420px; }
+  .barrow { display: grid; grid-template-columns: 90px 1fr; gap: 12px; align-items: center; }
+  .bl { font: var(--weight-medium) var(--text-sm)/1 var(--font-sans); color: var(--color-text-muted); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+  const { MetricTile, ProgressBar } = window.EmberDesignSystem_fc1096;
+  ReactDOM.createRoot(document.getElementById("root")).render(
+    <>
+      <div className="stats">
+        <MetricTile label="Prev Close" value="$294.38" />
+        <MetricTile label="Market Cap" value="$4.48T" />
+        <MetricTile label="Open" value="$294.09" />
+        <MetricTile label="P/E Ratio" value="35.51" />
+        <MetricTile label="Today" value="+3.69%" sentiment="positive" />
+        <MetricTile label="Max DD" value="-8.1%" sentiment="negative" />
+      </div>
+      <div className="bars">
+        <div className="barrow"><span className="bl">Desk run</span><ProgressBar current={4} total={6} showCount /></div>
+        <div className="barrow"><span className="bl">Consensus</span><ProgressBar current={70} total={111} tone="ink" /></div>
+        <div className="barrow"><span className="bl">Budget</span><ProgressBar current={88} total={100} tone="warning" /></div>
+      </div>
+    </>
+  );
+</script>
+</body>
+</html>

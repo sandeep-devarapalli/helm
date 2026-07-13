@@ -1,0 +1,110 @@
+name: helm
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-helm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helm-local-only}
+      POSTGRES_DB: ${POSTGRES_DB:-helm}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-helm} -d ${POSTGRES_DB:-helm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    environment:
+      HELM_ENVIRONMENT: local
+      HELM_DATABASE_URL: ${HELM_DATABASE_URL:-postgresql+asyncpg://helm:helm-local-only@postgres:5432/helm}
+      HELM_HERMES_VERSION: v2026.7.7.2
+      HELM_VIBE_VERSION: v0.1.11
+      HERMES_BASE_URL: http://hermes:8642
+      HERMES_API_KEY: ${HERMES_API_KEY:-helm-local-development-only}
+    command: ["uvicorn", "helm.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    environment:
+      HELM_ENVIRONMENT: local
+      HELM_DATABASE_URL: ${HELM_DATABASE_URL:-postgresql+asyncpg://helm:helm-local-only@postgres:5432/helm}
+    command: ["python", "-m", "helm_worker", "run"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  vibe-mcp:
+    build:
+      context: ..
+      dockerfile: infra/vibe.Dockerfile
+      args:
+        VIBE_TRADING_VERSION: 0.1.11
+    expose:
+      - "8900"
+    environment:
+      FASTMCP_HOST: 0.0.0.0
+      VIBE_TRADING_ENABLE_SHELL_TOOLS: "0"
+    volumes:
+      - vibe-data:/home/vibe/.vibe-trading
+      - vibe-runs:/home/vibe/runs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8900), 2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  hermes-profile-init:
+    build:
+      context: ..
+      dockerfile: infra/hermes-profile.Dockerfile
+    volumes:
+      - hermes-data:/target
+
+  hermes:
+    image: docker.io/nousresearch/hermes-agent:v2026.7.7.2@sha256:9c841866021c54c4596849f6135717e8a4d52ba510b7f52c50aef1de1a283973
+    restart: unless-stopped
+    environment:
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: 8642
+      API_SERVER_KEY: ${HERMES_API_KEY:-helm-local-development-only}
+      API_SERVER_MODEL_NAME: helm-operator
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+    command: ["gateway", "run"]
+    ports:
+      - "127.0.0.1:8642:8642"
+    volumes:
+      - hermes-data:/opt/data
+    depends_on:
+      hermes-profile-init:
+        condition: service_completed_successfully
+      vibe-mcp:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web.Dockerfile
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  hermes-data:
+  vibe-data:
+  vibe-runs:

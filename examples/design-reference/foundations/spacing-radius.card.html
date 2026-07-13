@@ -1,0 +1,21 @@
+<!-- @dsCard group="Spacing" viewport="700x160" name="Radius & elevation" subtitle="Corner scale + the three shadows" -->
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><link rel="stylesheet" href="../styles.css"/>
+<style>
+  body{margin:0;padding:22px;background:var(--color-bg);color:var(--color-text);font-family:var(--font-sans);display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .box{width:72px;height:60px;background:var(--color-surface);border:1px solid var(--color-border);display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px}
+  .k{font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-muted)}
+  .sep{width:1px;height:56px;background:var(--color-border);margin:0 4px}
+</style></head>
+<body>
+  <div class="box" style="border-radius:var(--radius-sm)"><span class="k">sm 6</span></div>
+  <div class="box" style="border-radius:var(--radius-md)"><span class="k">md 8</span></div>
+  <div class="box" style="border-radius:var(--radius-lg)"><span class="k">lg 10</span></div>
+  <div class="box" style="border-radius:var(--radius-xl)"><span class="k">xl 14</span></div>
+  <div class="box" style="border-radius:var(--radius-2xl)"><span class="k">2xl 20</span></div>
+  <div class="sep"></div>
+  <div class="box" style="border-radius:var(--radius-lg);box-shadow:var(--shadow-xs)"><span class="k">xs</span></div>
+  <div class="box" style="border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)"><span class="k">sm</span></div>
+  <div class="box" style="border-radius:var(--radius-lg);box-shadow:var(--shadow-md)"><span class="k">md</span></div>
+</body></html>

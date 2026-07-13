@@ -1,0 +1,33 @@
+/* ==========================================================================
+   Helm — Effects: radius, borders, shadows, motion
+   Nearly flat. Hairline borders carry all structure; shadows exist only on
+   floating layers (menus, the macOS window mock). Motion is quick fades and
+   color shifts — no bounces, no scale.
+   ========================================================================== */
+
+:root {
+  /* ---- Radius ---- */
+  --radius-sm: 0.375rem;   /* 6px  pills-inner, small controls  */
+  --radius-md: 0.5rem;     /* 8px  buttons, inputs, tabs        */
+  --radius-lg: 0.625rem;   /* 10px cards, panels                */
+  --radius-xl: 0.875rem;   /* 14px large cards, chat blocks     */
+  --radius-2xl: 1.25rem;   /* 20px window mock                  */
+  --radius-full: 9999px;   /* pills, avatars                    */
+
+  /* ---- Borders ---- */
+  --border-width: 1px;
+  --border-hairline: 1px solid var(--color-border);
+
+  /* ---- Shadows ---- */
+  --shadow-xs: 0 1px 2px 0 hsl(45 8% 11% / 0.04); /* @kind other */
+  --shadow-sm: 0 1px 3px 0 hsl(45 8% 11% / 0.07), 0 1px 2px -1px hsl(45 8% 11% / 0.05); /* @kind other */
+  --shadow-md: 0 8px 24px -8px hsl(45 8% 11% / 0.14); /* @kind other */
+  --shadow-window: 0 30px 70px -24px hsl(45 8% 11% / 0.30), 0 4px 16px -6px hsl(45 8% 11% / 0.10); /* @kind other */
+
+  /* ---- Motion ---- */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* @kind other */
+  --duration-fast: 120ms; /* @kind other */
+  --duration-base: 200ms; /* @kind other */
+  --duration-slow: 320ms; /* @kind other */
+}

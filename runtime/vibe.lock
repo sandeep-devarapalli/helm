@@ -1,0 +1,11 @@
+{
+  "runtime": "vibe-trading-ai",
+  "source": "https://github.com/HKUDS/Vibe-Trading",
+  "release": "v0.1.11",
+  "commit": "835dea734764a1425d13540b54ce8091b64280f2",
+  "package": "vibe-trading-ai==0.1.11",
+  "license": "MIT",
+  "license_url": "https://github.com/HKUDS/Vibe-Trading/blob/v0.1.11/LICENSE",
+  "verified_at": "2026-07-13",
+  "compatibility": "stage1-configured"
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@helm/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./styles.css": "./styles.css"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "scripts": {
+    "lint": "node ../../scripts/verify-ui.mjs",
+    "typecheck": "node ../../scripts/verify-ui.mjs",
+    "test": "node ../../scripts/verify-ui.mjs",
+    "build": "node ../../scripts/verify-ui.mjs"
+  }
+}

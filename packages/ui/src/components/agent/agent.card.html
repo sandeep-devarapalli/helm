@@ -1,0 +1,41 @@
+<!-- @dsCard group="Components" viewport="700x420" name="Agent" subtitle="ChatBubble, ToolCallRow, MandateCard, SwarmAgentRow" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body { margin: 0; padding: 22px; background: var(--color-bg); }
+  .stack { display: grid; gap: 12px; max-width: 560px; }
+  .swarm { border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); padding: 4px 14px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+  const { ChatBubble, ToolCallRow, MandateCard, SwarmAgentRow, Chip } = window.EmberDesignSystem_fc1096;
+  const Bank = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M4 18h16M6 18V9M10 18V9M14 18V9M18 18V9M12 3 2 9h20L12 3z"/></svg>;
+  ReactDOM.createRoot(document.getElementById("root")).render(
+    <div className="stack">
+      <ChatBubble role="user">How does <Chip tone="entity" icon={Bank}>NVDA</Chip>'s gross margin compare to AMD's over the last 4 quarters?</ChatBubble>
+      <ToolCallRow kind="thought" label="Thought" />
+      <ToolCallRow label="Get Financials" detail="1.2s" onClick={()=>{}} />
+      <ChatBubble role="agent"><strong>NVDA's gross margin has run 20–25 points above AMD's</strong> over the trailing four quarters, averaging roughly 75% versus AMD's low-50s.</ChatBubble>
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+        <MandateCard ordinal={1} label="Conservative" universe="US tech (mega-cap)" maxOrder="$2,500" dailyCap="4 trades/day" leverage="no leverage" />
+        <MandateCard ordinal={2} label="Balanced" universe="US tech" maxOrder="$5,000" dailyCap="10 trades/day" leverage="no leverage" active notes="Fits the stated 8% risk cap." />
+      </div>
+      <div className="swarm">
+        <SwarmAgentRow name="Macro analyst" role="regime" status="done" tool="get_market_data" elapsed="42s" output="Risk-on regime confirmed" />
+        <SwarmAgentRow name="Factor engineer" role="alpha" status="running" tool="run_bench_strict" elapsed="1m 08s" output="Screening 460 factors…" />
+        <SwarmAgentRow name="Risk officer" role="review" status="waiting" style={{borderBottom:"none"}} />
+      </div>
+    </div>
+  );
+</script>
+</body>
+</html>

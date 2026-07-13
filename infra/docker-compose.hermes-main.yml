@@ -1,0 +1,5 @@
+services:
+  hermes:
+    image: helm/hermes-main:development
+    build:
+      context: https://github.com/NousResearch/hermes-agent.git#main

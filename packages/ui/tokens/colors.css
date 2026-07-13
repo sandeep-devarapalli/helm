@@ -1,0 +1,76 @@
+/* ==========================================================================
+   Helm — Color system
+   Light-first "paper terminal": warm off-white surfaces, ink text, hairline
+   borders. Green is MARKET language (up, buy, positive) and the brand accent;
+   ink-black is the ACTION color (primary buttons, active states). Blue is
+   reserved for links and entity pills. Values as raw HSL triplets plus
+   resolved aliases — components use the --color-* aliases.
+   ========================================================================== */
+
+:root {
+  /* ---- Neutrals (warm paper) ---- */
+  --paper: 60 20% 99%; /* @kind color */
+  --surface-0: 0 0% 100%; /* @kind color */
+  --panel: 60 8% 96%; /* @kind color */
+  --panel-2: 60 7% 92%; /* @kind color */
+  --border-1: 50 8% 90%; /* @kind color */
+  --border-2: 50 7% 84%; /* @kind color */
+  --ink: 45 8% 11%; /* @kind color */
+  --ink-2: 45 6% 25%; /* @kind color */
+  --muted: 45 4% 44%; /* @kind color */
+  --faint: 45 4% 62%; /* @kind color */
+
+  /* ---- Market + semantic hues ---- */
+  --green: 152 55% 32%; /* @kind color */
+  --green-chart: 152 50% 40%; /* @kind color */
+  --red: 3 62% 52%; /* @kind color */
+  --blue: 217 72% 50%; /* @kind color */
+  --amber: 38 88% 44%; /* @kind color */
+
+  --radius: 0.5rem;
+
+  /* =======================================================================
+     Resolved aliases — use these in application code.
+     ======================================================================= */
+  --color-bg:            hsl(var(--paper));      /* page              */
+  --color-surface:       hsl(var(--surface-0));  /* cards, content    */
+  --color-panel:         hsl(var(--panel));      /* quiet gray fills  */
+  --color-panel-hover:   hsl(var(--panel-2));
+  --color-border:        hsl(var(--border-1));
+  --color-border-strong: hsl(var(--border-2));
+
+  --color-text:          hsl(var(--ink));
+  --color-text-2:        hsl(var(--ink-2));
+  --color-text-muted:    hsl(var(--muted));
+  --color-text-faint:    hsl(var(--faint));
+
+  /* Actions: ink is primary */
+  --color-primary:       hsl(var(--ink));
+  --color-primary-hover: hsl(45 8% 22%);
+  --color-primary-fg:    hsl(var(--surface-0));
+
+  /* Brand / market accent: green */
+  --color-accent:        hsl(var(--green));
+  --color-accent-soft:   hsl(152 40% 94%);
+  --color-accent-hairline: hsl(152 35% 78%);
+  --color-up:            hsl(var(--green));
+  --color-up-soft:       hsl(152 40% 94%);
+  --color-down:          hsl(var(--red));
+  --color-down-soft:     hsl(3 70% 96%);
+  --color-chart:         hsl(var(--green-chart));
+  --color-chart-fill:    hsl(152 50% 40% / 0.12);
+
+  /* Links + entity pills */
+  --color-link:          hsl(var(--blue));
+  --color-link-soft:     hsl(217 70% 95%);
+
+  /* Semantic status */
+  --color-success:       hsl(var(--green));
+  --color-success-soft:  hsl(152 40% 94%);
+  --color-danger:        hsl(var(--red));
+  --color-danger-soft:   hsl(3 70% 96%);
+  --color-warning:       hsl(var(--amber));
+  --color-warning-soft:  hsl(38 80% 94%);
+  --color-info:          hsl(var(--blue));
+  --color-info-soft:     hsl(217 70% 95%);
+}

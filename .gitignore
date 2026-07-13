@@ -1,0 +1,40 @@
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies, caches, and generated test output
+node_modules/
+.venv/
+apps/web/dist/
+output/playwright/
+.playwright-cli/
+.cache/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+coverage/
+.coverage
+dist/
+build/
+*.log
+
+# Source-reference material that is not licensed for redistribution
+/uploads/Screenshot 2026-07-09 at 10.52.52.png
+/uploads/Screenshot 2026-07-09 at 10.53.04.png
+/assets/icon.png
+/assets/feature-cross-market-data-backtesting.png
+/assets/feature-multi-agent-trading-teams.png
+/assets/feature-self-improving-trading-agent.png
+/assets/feature-shadow-account.png
+
+# Generated template runtime whose source is not part of this repository
+/templates/trading-console/

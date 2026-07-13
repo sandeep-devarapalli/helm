@@ -1,0 +1,36 @@
+<!-- @dsCard group="Type" viewport="700x170" name="Market formats" subtitle="US equities · Indian equities (NSE/BSE) · crypto 24/7" -->
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><link rel="stylesheet" href="../styles.css"/>
+<style>
+  body{margin:0;padding:22px;background:var(--color-bg);color:var(--color-text);font-family:var(--font-mono);font-variant-numeric:tabular-nums;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  .col{border:1px solid var(--color-border);border-radius:var(--radius-lg);background:var(--color-surface);padding:14px}
+  .mkt{font-family:var(--font-sans);font-size:var(--text-2xs);font-weight:600;letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--color-text-muted);margin-bottom:10px}
+  .tick{font-size:var(--text-sm);color:var(--color-text-2);margin-bottom:6px}
+  .price{font-size:var(--text-lg);font-weight:600}
+  .chg{font-size:var(--text-xs);margin-top:3px}
+  .note{font-family:var(--font-sans);font-size:var(--text-2xs);color:var(--color-text-faint);margin-top:10px;line-height:1.5}
+</style></head>
+<body>
+  <div class="col">
+    <div class="mkt">US equities</div>
+    <div class="tick">AAPL · NASDAQ</div>
+    <div class="price">$305.24</div>
+    <div class="chg" style="color:var(--color-up)">+$10.86 (+3.69%)</div>
+    <div class="note">Dollar, 2-dp. Cap in $T / $B.</div>
+  </div>
+  <div class="col">
+    <div class="mkt">Indian equities</div>
+    <div class="tick">RELIANCE · NSE</div>
+    <div class="price">₹2,904.15</div>
+    <div class="chg" style="color:var(--color-up)">+₹31.20 (+1.09%)</div>
+    <div class="note">Rupee, 2-dp. Cap in lakh crore: ₹19.65L Cr.</div>
+  </div>
+  <div class="col">
+    <div class="mkt">Crypto</div>
+    <div class="tick">BTC/USD · 24/7</div>
+    <div class="price">$118,240</div>
+    <div class="chg" style="color:var(--color-down)">-$1,820 (-1.51%)</div>
+    <div class="note">Pair notation. No "close" — 24h low/high/volume.</div>
+  </div>
+</body></html>
