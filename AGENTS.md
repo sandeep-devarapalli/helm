@@ -32,6 +32,7 @@ The upstream `NousResearch/hermes-agent` runtime is required and used unchanged.
 - Use `packages/ui` tokens and primitives; numbers remain mono and Lucide is the only icon set.
 - Never hand-edit generated files in `examples/design-reference/`.
 - Never commit credentials, source screenshots, copied upstream assets, broker data, or user-owned Hermes state.
+- Remove macOS-generated duplicate files such as `* 2.md` and `* 2.yml` before handoff; preserve the canonical file.
 - Update this file after a user correction so the mistake is not repeated.
 
 ## Git and verification
@@ -39,4 +40,5 @@ The upstream `NousResearch/hermes-agent` runtime is required and used unchanged.
 - Use `main`; never force-push it without approval.
 - Squash-merge pull requests.
 - Run the affected pnpm and uv checks, runtime-lock verification, and Docker Compose validation.
+- When tooling stalls in an iCloud-hosted workspace, check for File Provider placeholders and materialize or cleanly reinstall locked dependencies before retrying.
 - Investigate failures at their root rather than retrying or skipping them.
