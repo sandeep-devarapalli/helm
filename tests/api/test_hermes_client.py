@@ -3,7 +3,12 @@ import json
 
 import httpx
 import pytest
-from helm.integrations.hermes import HermesClient, HermesError
+from helm.integrations.hermes import (
+    HermesClient,
+    HermesError,
+    HermesRunRejected,
+    HermesSubmissionUncertain,
+)
 
 
 def test_runs_contract_and_sse_parsing() -> None:
@@ -146,5 +151,55 @@ def test_invalid_run_id_is_rejected_without_network_call() -> None:
     async def exercise() -> None:
         with pytest.raises(HermesError, match="run ID"):
             await client.status("../run")
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    ("response", "error_type"),
+    [
+        (httpx.Response(401), HermesRunRejected),
+        (httpx.Response(500), HermesSubmissionUncertain),
+    ],
+)
+def test_submission_errors_distinguish_rejection_from_uncertainty(
+    response: httpx.Response,
+    error_type: type[HermesError],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "hermes.api_server.capabilities",
+                    "platform": "hermes-agent",
+                    "features": {feature: True for feature in (
+                        "approval_events",
+                        "run_events_sse",
+                        "run_status",
+                        "run_stop",
+                        "run_submission",
+                    )},
+                    "endpoints": {
+                        name: {"method": method, "path": path}
+                        for name, (method, path) in {
+                            "runs": ("POST", "/v1/runs"),
+                            "run_status": ("GET", "/v1/runs/{run_id}"),
+                            "run_events": ("GET", "/v1/runs/{run_id}/events"),
+                            "run_stop": ("POST", "/v1/runs/{run_id}/stop"),
+                        }.items()
+                    },
+                },
+            )
+        return response
+
+    async def exercise() -> None:
+        client = HermesClient(
+            "http://hermes:8642",
+            "test-key",
+            httpx.MockTransport(handler),
+        )
+        with pytest.raises(error_type):
+            await client.submit_run("Hello", "session", "workspace", [])
 
     asyncio.run(exercise())

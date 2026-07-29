@@ -10,9 +10,13 @@ Stage 1 is a public foundation, not a trading release.
 
 - The Workbench shell and reusable helm UI package are present.
 - The API and worker expose honest health/version surfaces.
-- Workspace-scoped conversation persistence and create/list/get APIs are present;
-  Hermes invocation, event streaming, and the functional composer are not.
-- Hermes and Vibe versions are pinned, and the helm Hermes profile requires approval for memory and skill writes.
+- Workspace-scoped conversations can submit runs through Hermes's public Runs
+  API and persist durable correlation, ordered lifecycle events, and terminal
+  assistant messages.
+- Browser streaming, the functional composer, memory approvals, and complete
+  tool-result/citation reconciliation are not implemented.
+- Built-in Hermes memory is disabled until per-workspace instances and approval
+  governance exist. Hermes and Vibe versions remain pinned.
 - The Hermes profile pins `gpt-5.4-mini-2026-03-17` through the upstream `openai-api` provider.
 - Research, backtests, mandates, broker credentials, orders, fills, learning, and live trading are not implemented.
 - Values visible in the Workbench are labeled fixtures. The product is paper-trading-first; live capital remains blocked.
@@ -105,6 +109,10 @@ docker compose -f infra/docker-compose.yml config
 - New stable releases produce an update-review issue. The lock changes only after compatibility and safety checks pass.
 - `runtime/vibe.lock` pins the finance runtime. Hermes sees only the allowlisted read-only tools in the helm profile during Stage 1.
 - Credentials and user-owned Hermes state remain outside the profile distribution and Git history.
+
+Hermes run submission is not idempotent and its event stream is not replayable.
+helm records the attempt before calling upstream, consumes one backend-owned
+stream, and blocks replacement runs whenever the outcome is indeterminate.
 
 ## License
 

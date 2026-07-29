@@ -26,6 +26,18 @@ class HermesError(RuntimeError):
     pass
 
 
+class HermesRunRejected(HermesError):
+    pass
+
+
+class HermesSubmissionUncertain(HermesError):
+    pass
+
+
+class HermesRunMissing(HermesError):
+    pass
+
+
 class HermesClient:
     def __init__(
         self,
@@ -52,11 +64,14 @@ class HermesClient:
             timeout=self.control_timeout,
             transport=self.transport,
         ) as client:
-            capabilities = await client.get("/v1/capabilities")
-            capabilities.raise_for_status()
-            contract = capabilities.json()
+            try:
+                capabilities = await client.get("/v1/capabilities")
+                capabilities.raise_for_status()
+                contract = capabilities.json()
+            except (httpx.HTTPError, ValueError) as error:
+                raise HermesRunRejected("Hermes Runs API preflight failed") from error
             if not isinstance(contract, dict):
-                raise HermesError("Hermes Runs API is not compatible")
+                raise HermesRunRejected("Hermes Runs API is not compatible")
             features = contract.get("features", {})
             endpoints = contract.get("endpoints", {})
             endpoints_match = all(
@@ -70,27 +85,40 @@ class HermesClient:
                 or not all(features.get(feature) is True for feature in REQUIRED_FEATURES)
                 or not endpoints_match
             ):
-                raise HermesError("Hermes Runs API is not compatible")
-            response = await client.post(
-                "/v1/runs",
-                headers={"X-Hermes-Session-Key": session_key},
-                json={
-                    "input": content,
-                    "session_id": session_id,
-                    "conversation_history": history,
-                },
-            )
-            response.raise_for_status()
-        payload = response.json()
+                raise HermesRunRejected("Hermes Runs API is not compatible")
+            try:
+                response = await client.post(
+                    "/v1/runs",
+                    headers={"X-Hermes-Session-Key": session_key},
+                    json={
+                        "input": content,
+                        "session_id": session_id,
+                        "conversation_history": history,
+                    },
+                )
+            except httpx.HTTPError as error:
+                raise HermesSubmissionUncertain(
+                    "Hermes submission outcome is uncertain"
+                ) from error
+        if 400 <= response.status_code < 500:
+            raise HermesRunRejected("Hermes rejected the run submission")
+        if response.status_code >= 500:
+            raise HermesSubmissionUncertain("Hermes submission outcome is uncertain")
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise HermesSubmissionUncertain(
+                "Hermes submission outcome is uncertain"
+            ) from error
         if not isinstance(payload, dict):
-            raise HermesError("Hermes returned an invalid run response")
+            raise HermesSubmissionUncertain("Hermes returned an invalid run response")
         run_id = payload.get("run_id")
         if (
             response.status_code != 202
             or not isinstance(run_id, str)
             or not _valid_run_id(run_id)
         ):
-            raise HermesError("Hermes returned an invalid run response")
+            raise HermesSubmissionUncertain("Hermes returned an invalid run response")
         return run_id
 
     async def events(self, run_id: str) -> AsyncIterator[dict[str, Any]]:
@@ -124,6 +152,8 @@ class HermesClient:
             transport=self.transport,
         ) as client:
             response = await client.get(f"/v1/runs/{run_id}")
+            if response.status_code == 404:
+                raise HermesRunMissing("Hermes run no longer exists")
             response.raise_for_status()
         payload = response.json()
         if (
@@ -153,6 +183,8 @@ class HermesClient:
             transport=self.transport,
         ) as client:
             response = await client.post(f"/v1/runs/{run_id}/stop")
+            if response.status_code == 404:
+                raise HermesRunMissing("Hermes run no longer exists")
             response.raise_for_status()
         payload = response.json()
         if payload != {"run_id": run_id, "status": "stopping"}:
