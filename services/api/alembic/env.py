@@ -3,7 +3,8 @@ from logging.config import fileConfig
 
 from alembic import context
 from helm.config import get_settings
-from sqlalchemy import MetaData, pool
+from helm.domain import models
+from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -12,7 +13,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url.get_secret_value())
-target_metadata = MetaData()
+target_metadata = models.Base.metadata
 
 
 def run_migrations_offline() -> None:

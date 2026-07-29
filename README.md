@@ -10,6 +10,8 @@ Stage 1 is a public foundation, not a trading release.
 
 - The Workbench shell and reusable helm UI package are present.
 - The API and worker expose honest health/version surfaces.
+- Workspace-scoped conversation persistence and create/list/get APIs are present;
+  Hermes invocation, event streaming, and the functional composer are not.
 - Hermes and Vibe versions are pinned, and the helm Hermes profile requires approval for memory and skill writes.
 - The Hermes profile pins `gpt-5.4-mini-2026-03-17` through the upstream `openai-api` provider.
 - Research, backtests, mandates, broker credentials, orders, fills, learning, and live trading are not implemented.

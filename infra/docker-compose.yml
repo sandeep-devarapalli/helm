@@ -30,8 +30,21 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    environment:
+      HELM_ENVIRONMENT: local
+      HELM_DATABASE_URL: ${HELM_DATABASE_URL:-postgresql+asyncpg://helm:helm-local-only@postgres:5432/helm}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
       postgres:
         condition: service_healthy
+    restart: "no"
 
   worker:
     build:
@@ -42,8 +55,8 @@ services:
       HELM_DATABASE_URL: ${HELM_DATABASE_URL:-postgresql+asyncpg://helm:helm-local-only@postgres:5432/helm}
     command: ["python", "-m", "helm_worker", "run"]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   vibe-mcp:
     build:
