@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -41,7 +43,9 @@ class MessageRole(StrEnum):
 
 class AgentRunStatus(StrEnum):
     QUEUED = "queued"
+    SUBMITTING = "submitting"
     RUNNING = "running"
+    INDETERMINATE = "indeterminate"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -141,12 +145,62 @@ class AgentRun(Base):
         ),
         UniqueConstraint("workspace_id", "id"),
         CheckConstraint(
-            "status in ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            "status in "
+            "('queued', 'submitting', 'running', 'indeterminate', "
+            "'succeeded', 'failed', 'cancelled')",
             name="status_allowed",
+        ),
+        CheckConstraint(
+            "input is null or length(trim(input)) between 1 and 20000",
+            name="input_length",
+        ),
+        CheckConstraint(
+            "status not in ('queued', 'submitting', 'running', 'indeterminate') "
+            "or finished_at is null",
+            name="active_run_unfinished",
+        ),
+        CheckConstraint(
+            "status not in ('succeeded', 'failed', 'cancelled') "
+            "or finished_at is not null",
+            name="terminal_run_finished",
+        ),
+        CheckConstraint(
+            "status != 'submitting' or "
+            "(input is not null and submission_attempted_at is not null "
+            "and started_at is null and hermes_run_id is null "
+            "and event_stream_complete = false)",
+            name="submitting_shape",
+        ),
+        CheckConstraint(
+            "status != 'running' or "
+            "(input is not null and submission_attempted_at is not null "
+            "and started_at is not null and hermes_run_id is not null "
+            "and hermes_session_id is not null and event_stream_complete = false)",
+            name="running_shape",
+        ),
+        CheckConstraint(
+            "status != 'indeterminate' or "
+            "(input is not null and submission_attempted_at is not null "
+            "and event_stream_complete = false)",
+            name="indeterminate_shape",
+        ),
+        CheckConstraint(
+            "event_stream_complete = false "
+            "or status in ('succeeded', 'failed', 'cancelled')",
+            name="complete_stream_terminal",
         ),
         CheckConstraint(
             "started_at is null or finished_at is null or finished_at >= started_at",
             name="finished_after_started",
+        ),
+        CheckConstraint(
+            "hermes_run_id is null or "
+            "(length(hermes_run_id) = 36 and substr(hermes_run_id, 1, 4) = 'run_')",
+            name="hermes_run_id_length",
+        ),
+        CheckConstraint(
+            "hermes_session_id is null or length(hermes_session_id) between 1 and 256",
+            name="hermes_session_id_length",
         ),
         Index(
             "ix_agent_runs_workspace_conversation_created_id",
@@ -154,6 +208,18 @@ class AgentRun(Base):
             "conversation_id",
             "created_at",
             "id",
+        ),
+        Index(
+            "uq_agent_runs_one_active_per_conversation",
+            "workspace_id",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text(
+                "status in ('queued', 'submitting', 'running', 'indeterminate')"
+            ),
+            sqlite_where=text(
+                "status in ('queued', 'submitting', 'running', 'indeterminate')"
+            ),
         ),
     )
 
@@ -174,6 +240,18 @@ class AgentRun(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    input: Mapped[str | None] = mapped_column(Text)
+    submission_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    hermes_run_id: Mapped[str | None] = mapped_column(Text)
+    hermes_session_id: Mapped[str | None] = mapped_column(Text)
+    event_stream_complete: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
 
 
 class RunEvent(Base):

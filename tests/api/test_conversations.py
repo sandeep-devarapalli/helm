@@ -4,11 +4,13 @@ from datetime import UTC, datetime
 import pytest
 from helm.domain.models import (
     AgentRun,
+    AgentRunStatus,
     Conversation,
     Message,
     MessageRole,
     RunEvent,
     Workspace,
+    utc_now,
 )
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -212,6 +214,13 @@ def test_event_order_and_workspace_constraints(api_context) -> None:
                 await session.commit()
 
         async with api_context.session_factory() as session:
+            persisted_run = await session.get(AgentRun, run.id)
+            assert persisted_run is not None
+            persisted_run.status = AgentRunStatus.SUCCEEDED.value
+            persisted_run.finished_at = utc_now()
+            await session.commit()
+
+        async with api_context.session_factory() as session:
             second_run = AgentRun(
                 workspace_id=api_context.workspace_a,
                 conversation_id=conversation.id,
@@ -227,6 +236,24 @@ def test_event_order_and_workspace_constraints(api_context) -> None:
                 )
             )
             await session.commit()
+
+        async with api_context.session_factory() as session:
+            persisted_run = await session.get(AgentRun, second_run.id)
+            assert persisted_run is not None
+            persisted_run.status = AgentRunStatus.INDETERMINATE.value
+            persisted_run.input = "Analyze this symbol."
+            persisted_run.submission_attempted_at = utc_now()
+            await session.commit()
+
+        async with api_context.session_factory() as session:
+            session.add(
+                AgentRun(
+                    workspace_id=api_context.workspace_a,
+                    conversation_id=conversation.id,
+                )
+            )
+            with pytest.raises(IntegrityError):
+                await session.commit()
 
         async with api_context.session_factory() as session:
             await session.execute(
