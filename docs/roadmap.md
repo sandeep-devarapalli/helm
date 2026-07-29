@@ -127,6 +127,10 @@ separate authority, entity, account, data, and deployment profiles.
 M1 is an immediate parallel workstream, but it does not block paper engineering.
 It blocks institutional live activation.
 
+Use the maintained
+[Dubai institutional decision packet](operations/dubai-institutional-decision-packet.md)
+to collect M1 decisions and evidence without implying legal authorization.
+
 ### M2 — Persistent Hermes conversation
 
 **Outcome:** conversations and Hermes runs survive refresh and restart.
