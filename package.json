@@ -12,6 +12,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "brace-expansion@<=5.0.7": ">=5.0.8"
+    }
   }
 }
