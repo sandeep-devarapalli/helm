@@ -39,6 +39,18 @@ The hard boundary is intentional:
 
 See [architecture overview](docs/architecture/overview.md) and [trust boundaries](docs/architecture/trust-boundaries.md).
 
+## Direction and roadmap
+
+helm is designed for two separate operating contexts: self-directed individuals
+using their own accounts, and a proposed Dubai-based institutional entity using
+only its own capital. Client advisory and managed-account activity remain
+disabled and out of scope. No proposed entity location or paper capability
+implies live-trading authorization.
+
+See the maintained [product roadmap](docs/roadmap.md), the
+[operating-context model](docs/architecture/operating-contexts.md), and the
+dated [July 2026 research snapshot](docs/research/2026-07-29-product-regulatory-architecture-roadmap.md).
+
 ## Local development
 
 Requirements: macOS, Docker Desktop, Node.js, pnpm through Corepack, Python 3.12, and uv.
