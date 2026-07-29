@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     hermes_version: str = "not-configured"
     vibe_version: str = "not-configured"
+    hermes_base_url: str = "http://hermes:8642"
+    hermes_api_key: SecretStr = SecretStr("")
     database_url: SecretStr = SecretStr(
         "postgresql+asyncpg://helm:helm@postgres:5432/helm"
     )

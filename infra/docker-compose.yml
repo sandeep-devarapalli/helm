@@ -24,8 +24,8 @@ services:
       HELM_DATABASE_URL: ${HELM_DATABASE_URL:-postgresql+asyncpg://helm:helm-local-only@postgres:5432/helm}
       HELM_HERMES_VERSION: v2026.7.7.2
       HELM_VIBE_VERSION: v0.1.11
-      HERMES_BASE_URL: http://hermes:8642
-      HERMES_API_KEY: ${HERMES_API_KEY:-helm-local-development-only}
+      HELM_HERMES_BASE_URL: http://hermes:8642
+      HELM_HERMES_API_KEY: ${HERMES_API_KEY:-helm-local-development-only}
     command: ["uvicorn", "helm.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "127.0.0.1:8000:8000"
