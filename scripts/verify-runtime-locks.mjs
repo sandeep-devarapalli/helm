@@ -17,15 +17,62 @@ const required = ["distribution.yaml", "SOUL.md", "config.yaml", "mcp.json"];
 for (const file of required) await access(join(profile, file));
 
 const config = await readFile(join(profile, "config.yaml"), "utf8");
-if (!config.includes("write_approval: true")) throw new Error("Hermes writes must require approval");
+if (!/^skills:\n  write_approval: true$/m.test(config)) throw new Error("Hermes skill writes must require approval");
+if (!/^memory:\n(?:  .+\n)*  write_approval: true$/m.test(config)) {
+  throw new Error("Hermes memory writes must require approval");
+}
+if (!/^model:\n  default: gpt-5\.4-mini-2026-03-17\n  provider: openai-api\n  base_url: ""\n  api_mode: codex_responses$/m.test(config)) {
+  throw new Error("Hermes model pin changed unexpectedly");
+}
 if (!config.includes("transport: sse")) throw new Error("Vibe 0.1.11 requires Hermes legacy SSE transport");
-for (const blocked of ["terminal", "file", "browser", "code_execution"]) {
-  if (!config.includes(`- ${blocked}`)) throw new Error(`Hermes toolset ${blocked} must remain disabled`);
+const expectedDisabledToolsets = [
+  "terminal",
+  "file",
+  "browser",
+  "web",
+  "search",
+  "vision",
+  "image_gen",
+  "tts",
+  "messaging",
+  "homeassistant",
+  "spotify",
+  "discord_admin",
+  "code_execution",
+  "rl",
+];
+const disabledToolsets = config.match(/agent:\n  disabled_toolsets:\n((?:    - .+\n?)+)/)?.[1]
+  ?.trim()
+  .split("\n")
+  .map((line) => line.replace(/^\s*-\s*/, ""));
+if (JSON.stringify(disabledToolsets) !== JSON.stringify(expectedDisabledToolsets)) {
+  throw new Error("Hermes disabled toolsets changed unexpectedly");
+}
+if (!/^platform_toolsets:\n  api_server:\n    - vibe_trading$/m.test(config)) {
+  throw new Error("Hermes API server must expose only the curated Vibe toolset");
 }
 
+const expectedTools = [
+  "search_symbol",
+  "get_market_data",
+  "get_financial_statements",
+  "get_stock_profile",
+  "get_stock_news",
+  "get_sec_filings",
+];
 const mcp = JSON.parse(await readFile(join(profile, "mcp.json"), "utf8"));
 const tools = mcp.mcpServers?.vibe_trading?.enabledTools;
-if (!Array.isArray(tools) || tools.length !== 6) throw new Error("Unexpected Vibe tool allowlist");
+if (!Array.isArray(tools) || JSON.stringify(tools) !== JSON.stringify(expectedTools)) {
+  throw new Error("Unexpected Vibe tool allowlist");
+}
+
+const configTools = config.match(/    tools:\n      include:\n((?:        - .+\n?)+)/)?.[1]
+  ?.trim()
+  .split("\n")
+  .map((line) => line.replace(/^\s*-\s*/, ""));
+if (JSON.stringify(configTools) !== JSON.stringify(expectedTools)) {
+  throw new Error("Hermes config and MCP tool allowlists differ");
+}
 
 const compose = await readFile(join(root, "infra", "docker-compose.yml"), "utf8");
 const expectedImage = `${hermes.image}@${hermes.digest}`;

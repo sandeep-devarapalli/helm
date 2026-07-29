@@ -11,6 +11,7 @@ Stage 1 is a public foundation, not a trading release.
 - The Workbench shell and reusable helm UI package are present.
 - The API and worker expose honest health/version surfaces.
 - Hermes and Vibe versions are pinned, and the helm Hermes profile requires approval for memory and skill writes.
+- The Hermes profile pins `gpt-5.4-mini-2026-03-17` through the upstream `openai-api` provider.
 - Research, backtests, mandates, broker credentials, orders, fills, learning, and live trading are not implemented.
 - Values visible in the Workbench are labeled fixtures. The product is paper-trading-first; live capital remains blocked.
 
@@ -59,12 +60,12 @@ open http://localhost:5173
 Run the complete Stage 1 foundation:
 
 ```zsh
-cp .env.example .env
-docker compose -f infra/docker-compose.yml up --build
+./scripts/configure-openai-key.sh
+docker compose --env-file .env -f infra/docker-compose.yml up --build
 open http://localhost:5173
 ```
 
-The pinned Hermes container needs a configured model provider before conversation works. Stage 1 validates configuration and health only; it does not ship placeholder model credentials.
+The setup command prompts without echo and saves the provider credential in the ignored local `.env` file. The pinned Hermes container needs a configured model before conversation works. Stage 1 validates configuration and health only; it does not ship placeholder model credentials.
 
 ## Verification
 

@@ -1,5 +1,11 @@
 _config_version: 33
 
+model:
+  default: gpt-5.4-mini-2026-03-17
+  provider: openai-api
+  base_url: ""
+  api_mode: codex_responses
+
 skills:
   write_approval: true
 
@@ -26,6 +32,10 @@ agent:
     - discord_admin
     - code_execution
     - rl
+
+platform_toolsets:
+  api_server:
+    - vibe_trading
 
 mcp_servers:
   vibe_trading:
