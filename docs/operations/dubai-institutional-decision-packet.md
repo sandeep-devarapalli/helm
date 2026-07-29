@@ -17,6 +17,10 @@
 
 ## How to use this packet
 
+Keep this tracked file as an unpopulated public template. Complete it in an
+access-controlled private system, not in Git. Only redacted summaries that an
+accountable owner has expressly approved for public release may be committed.
+
 Use `Proposed`, `Confirmed`, `Rejected`, or `Blocked` for decision status.
 Every `Confirmed` entry must cite an item in the evidence register. Oral advice
 is a lead only; record signed advice, regulator correspondence, provider terms,
@@ -38,7 +42,7 @@ market rules.
 | Crypto path | `[disabled / VARA path TBD]` | Proposed | — | `[TBD]` |
 | Indian-market path | `[research only / FPI feasibility]` | Proposed | — | `[TBD]` |
 | Commodity exposure | `[ETF only / futures deferred]` | Proposed | — | `[TBD]` |
-| Institutional live decision | `NO-GO` | Confirmed | Roadmap M11B | Board |
+| Institutional live capability | `NO-GO (repository default)` | Blocked | — | — |
 
 The institutional live decision remains `NO-GO` until every gate in section 15
 is independently cleared. Paper operation may continue only in an environment
@@ -428,7 +432,9 @@ hash, owner, location, permissions, effective date, and expiry.
 | --- | --- | --- | --- | --- |
 | `[YYYY-MM-DD]` | `[TBD]` | `[TBD]` | `[TBD]` | `[date/event]` |
 
-Final M1 completion requires signed acceptance from the governing body, UAE
-legal counsel, UAE tax adviser, and the owner of each relevant market-specific
-review. M1 completion permits engineering planning and paper rehearsal only;
-funded activation remains independently gated by M11B.
+Final M1 completion requires dated approval from helm's governing body and
+accountable risk and compliance owners. That internal decision must be
+supported by scoped, dated written opinions or deliverables from UAE legal and
+tax advisers and the owner of each relevant market-specific review, with their
+limitations recorded. M1 completion permits engineering planning and paper
+rehearsal only; funded activation remains independently gated by M11B.
