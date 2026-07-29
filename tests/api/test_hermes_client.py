@@ -113,22 +113,14 @@ def test_runs_contract_and_sse_parsing() -> None:
     ]
 
 
-def test_missing_runs_capability_fails_before_submission() -> None:
+def test_malformed_capabilities_fail_before_submission() -> None:
     calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
         assert request.url.path == "/v1/capabilities"
-        return httpx.Response(
-            200,
-            json={
-                "object": "hermes.api_server.capabilities",
-                "platform": "hermes-agent",
-                "features": {},
-                "endpoints": {},
-            },
-        )
+        return httpx.Response(200, json=[])
 
     async def exercise() -> None:
         client = HermesClient(

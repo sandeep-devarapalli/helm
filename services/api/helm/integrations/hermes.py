@@ -55,15 +55,18 @@ class HermesClient:
             capabilities = await client.get("/v1/capabilities")
             capabilities.raise_for_status()
             contract = capabilities.json()
+            if not isinstance(contract, dict):
+                raise HermesError("Hermes Runs API is not compatible")
             features = contract.get("features", {})
             endpoints = contract.get("endpoints", {})
             endpoints_match = all(
                 endpoints.get(name) == {"method": method, "path": path}
                 for name, (method, path) in REQUIRED_ENDPOINTS.items()
-            )
+            ) if isinstance(endpoints, dict) else False
             if (
                 contract.get("object") != "hermes.api_server.capabilities"
                 or contract.get("platform") != "hermes-agent"
+                or not isinstance(features, dict)
                 or not all(features.get(feature) is True for feature in REQUIRED_FEATURES)
                 or not endpoints_match
             ):
@@ -79,6 +82,8 @@ class HermesClient:
             )
             response.raise_for_status()
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise HermesError("Hermes returned an invalid run response")
         run_id = payload.get("run_id")
         if (
             response.status_code != 202
