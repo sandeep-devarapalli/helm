@@ -11,11 +11,17 @@ helm starts as a modular monolith plus one durable worker.
 
 Stage 1 implements only the repository, UI, health, configuration, and runtime boundaries. Domain persistence, agent projection, backtesting, and paper execution are later explicit stages.
 
+helm is designed for isolated individual self-directed and institutional
+proprietary operating contexts. Authentication does not imply trading
+authority, and the two contexts never share credentials, accounts, mandates,
+positions, or audit state. See [operating contexts](operating-contexts.md) and
+the maintained [product roadmap](../roadmap.md).
+
 ## Operating loop
 
 ```text
 Understand → Research → Validate → Decide → Propose mandate
-→ User commits → Execute inside mandate → Reconcile
+→ Authorized principal commits → Execute inside mandate → Reconcile
 → Propose improvements → User approves or rejects
 ```
 

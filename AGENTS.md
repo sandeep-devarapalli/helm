@@ -13,8 +13,10 @@ The upstream `NousResearch/hermes-agent` runtime is required and used unchanged.
 1. `README.md`
 2. `docs/architecture/overview.md`
 3. `docs/architecture/trust-boundaries.md`
-4. `docs/brand/design.md` before UI work
-5. The relevant `packages/ui/src/components/<group>/<Name>.prompt.md` before changing a primitive
+4. `docs/architecture/operating-contexts.md`
+5. `docs/roadmap.md` before changing product scope or milestone claims
+6. `docs/brand/design.md` before UI work
+7. The relevant `packages/ui/src/components/<group>/<Name>.prompt.md` before changing a primitive
 
 ## Product invariants
 
@@ -24,6 +26,10 @@ The upstream `NousResearch/hermes-agent` runtime is required and used unchanged.
 - Memory, preference, strategy, skill, risk, and mandate changes require explicit approval.
 - Weak, partial, stale, or failed evidence stays visibly weak.
 - Stage 1 health must not imply that research, execution, or learning exists.
+- Individual self-directed and institutional proprietary contexts never share
+  credentials, authority, accounts, positions, mandates, or audit state.
+- Client advisory, managed accounts, pooled capital, and copy trading remain
+  disabled unless separately designed and authorized.
 
 ## Code and repository rules
 
