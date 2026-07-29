@@ -21,6 +21,9 @@ if (!/^skills:\n  write_approval: true$/m.test(config)) throw new Error("Hermes 
 if (!/^memory:\n(?:  .+\n)*  write_approval: true$/m.test(config)) {
   throw new Error("Hermes memory writes must require approval");
 }
+if (!/^memory:\n  memory_enabled: false\n  user_profile_enabled: false$/m.test(config)) {
+  throw new Error("Hermes built-in memory must remain disabled until workspace isolation exists");
+}
 if (!/^model:\n  default: gpt-5\.4-mini-2026-03-17\n  provider: openai-api\n  base_url: ""\n  api_mode: codex_responses$/m.test(config)) {
   throw new Error("Hermes model pin changed unexpectedly");
 }

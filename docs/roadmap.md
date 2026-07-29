@@ -300,21 +300,15 @@ Commodity ETFs do not satisfy this gate for futures.
 
 ## Current implementation slice
 
-The next engineering PR after foundation closure should implement only the
-Stage 2A persistence spine:
+Stage 2A established the persistence spine. Stage 2B submits one run through
+the pinned Hermes public Runs API, stores upstream correlation, and projects
+one backend-owned event stream into ordered `RunEvent` records.
 
-- `Workspace`
-- `Conversation`
-- `Message`
-- `AgentRun`
-- ordered `RunEvent`
-- the first Alembic migration
-- create/list/get conversation endpoints
-- persistence and isolation tests
-
-Hermes invocation, SSE projection, and Workbench activation should follow in
-separate focused PRs. In parallel, M1 should produce the Dubai counsel and
-broker decision packet; it should not add live code.
+The pinned Hermes stream has no replay cursor and exposes limited tool
+lifecycle metadata rather than complete arguments, results, or citations.
+Interrupted projection remains explicitly incomplete and is never retried.
+Session-message reconciliation, resumable helm SSE, memory approvals, and
+Workbench activation remain separate focused PRs.
 
 ## Planning rules
 

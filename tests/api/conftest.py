@@ -90,9 +90,11 @@ def api_context(tmp_path: Path) -> Iterator[ApiTestContext]:
 
     asyncio.run(prepare())
     app.dependency_overrides[get_session] = override_session
+    app.state.session_factory = session_factory
     with TestClient(app) as client:
         yield ApiTestContext(client, session_factory, workspace_a, workspace_b)
     app.dependency_overrides.clear()
+    del app.state.session_factory
 
     async def cleanup() -> None:
         if is_sqlite:

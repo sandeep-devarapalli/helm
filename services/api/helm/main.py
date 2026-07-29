@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -7,8 +8,11 @@ from pydantic import BaseModel
 
 from helm import __version__
 from helm.api.conversations import router as conversations_router
+from helm.api.runs import cleanup_upstream_run, recover_orphaned_runs
+from helm.api.runs import router as runs_router
 from helm.config import get_settings
-from helm.database import dispose_database
+from helm.database import dispose_database, get_session_factory
+from helm.integrations.hermes import get_hermes_client
 
 
 class HealthResponse(BaseModel):
@@ -25,9 +29,22 @@ class VersionResponse(BaseModel):
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    yield
-    await dispose_database()
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if not hasattr(app.state, "session_factory"):
+        app.state.session_factory = get_session_factory()
+    hermes = get_hermes_client()
+    unresolved = await recover_orphaned_runs(app.state.session_factory)
+    cleanup_tasks = {
+        asyncio.create_task(cleanup_upstream_run(hermes, run_id))
+        for run_id in unresolved
+    }
+    try:
+        yield
+    finally:
+        for task in cleanup_tasks:
+            task.cancel()
+        await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+        await dispose_database()
 
 
 app = FastAPI(
@@ -37,6 +54,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(conversations_router)
+app.include_router(runs_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["system"])
