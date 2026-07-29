@@ -1,0 +1,1 @@
+"""Persisted helm domain models."""
