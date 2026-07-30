@@ -1,7 +1,9 @@
 import json
 import re
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -13,13 +15,23 @@ REQUIRED_FEATURES = {
     "run_status",
     "run_stop",
     "run_submission",
+    "session_resources",
 }
 REQUIRED_ENDPOINTS = {
     "runs": ("POST", "/v1/runs"),
     "run_status": ("GET", "/v1/runs/{run_id}"),
     "run_events": ("GET", "/v1/runs/{run_id}/events"),
     "run_stop": ("POST", "/v1/runs/{run_id}/stop"),
+    "session_messages": ("GET", "/api/sessions/{session_id}/messages"),
 }
+MAX_SESSION_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_SESSION_MESSAGES = 10_000
+
+
+@dataclass(frozen=True)
+class HermesTranscript:
+    resolved_session_id: str
+    messages: tuple[dict[str, Any], ...]
 
 
 class HermesError(RuntimeError):
@@ -35,6 +47,10 @@ class HermesSubmissionUncertain(HermesError):
 
 
 class HermesRunMissing(HermesError):
+    pass
+
+
+class HermesSessionMissing(HermesError):
     pass
 
 
@@ -142,6 +158,82 @@ class HermesClient:
                     if not isinstance(event, dict):
                         raise HermesError("Hermes returned an invalid run event")
                     yield event
+
+    async def session_messages(self, session_id: str) -> HermesTranscript:
+        if not session_id or len(session_id) > 256:
+            raise HermesError("Hermes session ID is invalid")
+        path = f"/api/sessions/{quote(session_id, safe='')}/messages"
+        async with httpx.AsyncClient(
+            base_url=self.base_url,
+            headers=self.headers,
+            timeout=self.control_timeout,
+            transport=self.transport,
+        ) as client:
+            async with client.stream("GET", path) as response:
+                if response.status_code == 404:
+                    raise HermesSessionMissing("Hermes session does not exist")
+                response.raise_for_status()
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > MAX_SESSION_RESPONSE_BYTES:
+                        raise HermesError("Hermes session transcript is oversized")
+        try:
+            payload = json.loads(body)
+        except (UnicodeDecodeError, ValueError) as error:
+            raise HermesError("Hermes returned an invalid session transcript") from error
+        if (
+            not isinstance(payload, dict)
+            or payload.get("object") != "list"
+            or not isinstance(payload.get("session_id"), str)
+            or not 1 <= len(payload["session_id"]) <= 256
+            or not isinstance(payload.get("data"), list)
+            or len(payload["data"]) > MAX_SESSION_MESSAGES
+        ):
+            raise HermesError("Hermes returned an invalid session transcript")
+
+        resolved_session_id = payload["session_id"]
+        messages: list[dict[str, Any]] = []
+        previous_id = 0
+        for raw_message in payload["data"]:
+            if not isinstance(raw_message, dict):
+                raise HermesError("Hermes returned an invalid session transcript")
+            message_id = raw_message.get("id")
+            role = raw_message.get("role")
+            content = raw_message.get("content")
+            if (
+                not isinstance(message_id, int)
+                or isinstance(message_id, bool)
+                or message_id <= previous_id
+                or raw_message.get("session_id") != resolved_session_id
+                or role not in {"user", "assistant", "system", "tool"}
+                or not isinstance(content, str)
+            ):
+                raise HermesError("Hermes returned an invalid session transcript")
+            tool_call_id = raw_message.get("tool_call_id")
+            tool_name = raw_message.get("tool_name")
+            tool_calls = raw_message.get("tool_calls")
+            if tool_call_id is not None and not isinstance(tool_call_id, str):
+                raise HermesError("Hermes returned an invalid session transcript")
+            if tool_name is not None and not isinstance(tool_name, str):
+                raise HermesError("Hermes returned an invalid session transcript")
+            if tool_calls is not None and not isinstance(tool_calls, list):
+                raise HermesError("Hermes returned an invalid session transcript")
+            messages.append(
+                {
+                    "id": message_id,
+                    "role": role,
+                    "content": content,
+                    "tool_call_id": tool_call_id,
+                    "tool_calls": tool_calls,
+                    "tool_name": tool_name,
+                }
+            )
+            previous_id = message_id
+        return HermesTranscript(
+            resolved_session_id=resolved_session_id,
+            messages=tuple(messages),
+        )
 
     async def status(self, run_id: str) -> dict[str, Any]:
         _require_run_id(run_id)

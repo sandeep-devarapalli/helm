@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 import httpx
@@ -19,7 +19,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -31,6 +31,8 @@ from helm.domain.models import (
     Message,
     MessageRole,
     RunEvent,
+    RunToolProvenance,
+    ToolProvenanceStatus,
     utc_now,
 )
 from helm.integrations.hermes import (
@@ -38,7 +40,9 @@ from helm.integrations.hermes import (
     HermesError,
     HermesRunMissing,
     HermesRunRejected,
+    HermesSessionMissing,
     HermesSubmissionUncertain,
+    HermesTranscript,
     get_hermes_client,
 )
 
@@ -59,6 +63,7 @@ STREAM_CLOSED_STATUSES = {
     AgentRunStatus.CANCELLED.value,
 }
 MAX_EVENT_PAYLOAD_BYTES = 64 * 1024
+MAX_TOOL_VALUE_BYTES = 64 * 1024
 MAX_SEQUENCE_NUMBER = 2**63 - 1
 EVENT_PAGE_LIMIT = 100
 SSE_POLL_INTERVAL_SECONDS = 0.25
@@ -74,12 +79,39 @@ SAFE_EVENT_FIELDS = {
     "run.failed": ("error",),
     "run.cancelled": (),
 }
+APPROVED_HERMES_TOOLS = frozenset(
+    {
+        "search_symbol",
+        "get_market_data",
+        "get_financial_statements",
+        "get_stock_profile",
+        "get_stock_news",
+        "get_sec_filings",
+    }
+)
 
 
 @dataclass(frozen=True)
 class StopResolution:
     resolved: bool
     terminal_snapshot: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ReconciledTool:
+    call_message_id: int
+    result_message_id: int | None
+    tool_call_id: str
+    tool_name: str
+    arguments: object
+    result: str | None
+
+
+@dataclass(frozen=True)
+class Reconciliation:
+    status: ToolProvenanceStatus
+    reason: str | None
+    tools: tuple[ReconciledTool, ...] = ()
 
 
 class RunCreate(BaseModel):
@@ -111,7 +143,10 @@ class RunDetailResponse(RunResponse):
     started_at: datetime | None
     finished_at: datetime | None
     projection_gap: bool
-    tool_provenance_complete: Literal[False] = False
+    tool_provenance_status: str
+    tool_provenance_reason: str | None
+    tool_provenance_complete: bool
+    structured_citations_available: bool = False
 
 
 class RunEventResponse(BaseModel):
@@ -119,7 +154,7 @@ class RunEventResponse(BaseModel):
     event_type: str
     payload: dict[str, object]
     created_at: datetime
-    tool_provenance_complete: Literal[False] = False
+    tool_provenance_complete: bool = False
 
 
 class RunEventPage(BaseModel):
@@ -127,7 +162,27 @@ class RunEventPage(BaseModel):
     next_cursor: int | None
     event_stream_complete: bool
     projection_gap: bool
-    tool_provenance_complete: Literal[False] = False
+    tool_provenance_status: str
+    tool_provenance_complete: bool
+
+
+class ToolProvenanceResponse(BaseModel):
+    sequence_number: int
+    call_message_id: int
+    result_message_id: int | None
+    tool_call_id: str
+    tool_name: str
+    arguments: object
+    result: str | None
+
+
+class RunProvenanceResponse(BaseModel):
+    status: str
+    reason: str | None
+    checked_at: datetime | None
+    resolved_session_id: str | None
+    items: list[ToolProvenanceResponse]
+    structured_citations_available: bool = False
 
 
 def request_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
@@ -173,7 +228,11 @@ async def has_projection_gap(
     )
 
 
-def public_event(event: RunEvent) -> RunEventResponse:
+def public_event(
+    event: RunEvent,
+    *,
+    tool_provenance_complete: bool = False,
+) -> RunEventResponse:
     payload: dict[str, object]
     try:
         encoded = json.dumps(
@@ -196,6 +255,7 @@ def public_event(event: RunEvent) -> RunEventResponse:
         event_type=event.event_type,
         payload=payload,
         created_at=event.created_at,
+        tool_provenance_complete=tool_provenance_complete,
     )
 
 
@@ -302,10 +362,18 @@ async def persisted_event_stream(
 
         if events:
             expected = cursor + 1
+            provenance_complete = (
+                run.tool_provenance_status == ToolProvenanceStatus.COMPLETE.value
+            )
             for event in events:
                 if event.sequence_number != expected:
                     return
-                yield sse_frame(public_event(event))
+                yield sse_frame(
+                    public_event(
+                        event,
+                        tool_provenance_complete=provenance_complete,
+                    )
+                )
                 cursor = event.sequence_number
                 expected += 1
             last_activity = asyncio.get_running_loop().time()
@@ -330,6 +398,328 @@ def safe_event(event: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if event_type == "reasoning.available":
         payload["available"] = True
     return event_type, payload
+
+
+def encoded_size(value: object) -> int:
+    return len(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+
+
+def reconcile_transcript(
+    transcript: HermesTranscript,
+    cursor: int,
+    expected_input: str,
+    terminal_output: str | None,
+) -> Reconciliation:
+    suffix = [message for message in transcript.messages if message["id"] > cursor]
+    if not suffix:
+        return Reconciliation(
+            ToolProvenanceStatus.UNAVAILABLE,
+            "no_messages_after_cursor",
+        )
+    user_indexes = [
+        index for index, message in enumerate(suffix) if message["role"] == "user"
+    ]
+    if (
+        not user_indexes
+        or any(message["role"] != "system" for message in suffix[: user_indexes[0]])
+        or suffix[user_indexes[0]]["content"] != expected_input
+    ):
+        return Reconciliation(
+            ToolProvenanceStatus.CONFLICTING,
+            "turn_boundary_mismatch",
+        )
+    turn_end = user_indexes[1] if len(user_indexes) > 1 else len(suffix)
+    turn = suffix[user_indexes[0] : turn_end]
+
+    calls: dict[str, ReconciledTool] = {}
+    results: dict[str, tuple[int, str, str]] = {}
+    for message in turn:
+        if message["role"] == "assistant":
+            tool_calls = message.get("tool_calls") or []
+            for raw_call in tool_calls:
+                if not isinstance(raw_call, dict):
+                    return Reconciliation(
+                        ToolProvenanceStatus.CONFLICTING,
+                        "malformed_tool_call",
+                    )
+                function = raw_call.get("function")
+                call_id = raw_call.get("id")
+                if (
+                    raw_call.get("type") != "function"
+                    or not isinstance(function, dict)
+                    or not isinstance(call_id, str)
+                    or not 1 <= len(call_id) <= 256
+                    or not call_id.strip()
+                    or call_id in calls
+                ):
+                    return Reconciliation(
+                        ToolProvenanceStatus.CONFLICTING,
+                        "malformed_or_duplicate_tool_call",
+                    )
+                tool_name = function.get("name")
+                raw_arguments = function.get("arguments")
+                if (
+                    not isinstance(tool_name, str)
+                    or tool_name not in APPROVED_HERMES_TOOLS
+                    or not isinstance(raw_arguments, str)
+                ):
+                    return Reconciliation(
+                        ToolProvenanceStatus.CONFLICTING,
+                        "unapproved_or_malformed_tool_call",
+                    )
+                try:
+                    arguments = json.loads(raw_arguments)
+                    if not isinstance(arguments, dict):
+                        raise ValueError
+                    if encoded_size(arguments) > MAX_TOOL_VALUE_BYTES:
+                        raise OverflowError
+                except (
+                    OverflowError,
+                    RecursionError,
+                    TypeError,
+                    UnicodeError,
+                    ValueError,
+                ):
+                    return Reconciliation(
+                        ToolProvenanceStatus.CONFLICTING,
+                        "invalid_or_oversized_tool_arguments",
+                    )
+                calls[call_id] = ReconciledTool(
+                    call_message_id=message["id"],
+                    result_message_id=None,
+                    tool_call_id=call_id,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    result=None,
+                )
+        elif message["role"] == "tool":
+            call_id = message.get("tool_call_id")
+            tool_name = message.get("tool_name")
+            result = message["content"]
+            if (
+                not isinstance(call_id, str)
+                or not call_id
+                or not call_id.strip()
+                or call_id in results
+                or not isinstance(tool_name, str)
+                or tool_name not in APPROVED_HERMES_TOOLS
+                or len(result.encode("utf-8")) > MAX_TOOL_VALUE_BYTES
+            ):
+                return Reconciliation(
+                    ToolProvenanceStatus.CONFLICTING,
+                    "malformed_or_duplicate_tool_result",
+                )
+            results[call_id] = (message["id"], tool_name, result)
+
+    if set(results) - set(calls):
+        return Reconciliation(
+            ToolProvenanceStatus.CONFLICTING,
+            "orphan_tool_result",
+        )
+
+    reconciled: list[ReconciledTool] = []
+    missing_result = False
+    for call in calls.values():
+        result = results.get(call.tool_call_id)
+        if result is None:
+            missing_result = True
+            reconciled.append(call)
+            continue
+        result_message_id, result_tool_name, result_content = result
+        if (
+            result_tool_name != call.tool_name
+            or result_message_id <= call.call_message_id
+        ):
+            return Reconciliation(
+                ToolProvenanceStatus.CONFLICTING,
+                "tool_result_mismatch",
+            )
+        reconciled.append(
+            ReconciledTool(
+                call_message_id=call.call_message_id,
+                result_message_id=result_message_id,
+                tool_call_id=call.tool_call_id,
+                tool_name=call.tool_name,
+                arguments=call.arguments,
+                result=result_content,
+            )
+        )
+
+    if terminal_output is not None:
+        final_messages = [
+            message
+            for message in turn
+            if message["role"] == "assistant"
+            and not message.get("tool_calls")
+            and message["content"]
+        ]
+        if (
+            not final_messages
+            or final_messages[-1]["content"] != terminal_output
+            or final_messages[-1]["id"] != turn[-1]["id"]
+        ):
+            return Reconciliation(
+                ToolProvenanceStatus.CONFLICTING,
+                "terminal_output_mismatch",
+            )
+
+    if missing_result:
+        return Reconciliation(
+            ToolProvenanceStatus.PARTIAL,
+            "missing_tool_result",
+            tuple(reconciled),
+        )
+    return Reconciliation(
+        ToolProvenanceStatus.COMPLETE,
+        None,
+        tuple(reconciled),
+    )
+
+
+async def persist_reconciliation(
+    session_factory: async_sessionmaker[AsyncSession],
+    workspace_id: UUID,
+    run_id: UUID,
+    reconciliation: Reconciliation,
+    *,
+    resolved_session_id: str | None,
+) -> None:
+    async with session_factory() as session:
+        run = await session.scalar(
+            select(AgentRun)
+            .where(AgentRun.id == run_id, AgentRun.workspace_id == workspace_id)
+            .with_for_update()
+        )
+        if run is None or run.status not in {
+            AgentRunStatus.SUCCEEDED.value,
+            AgentRunStatus.FAILED.value,
+            AgentRunStatus.CANCELLED.value,
+        }:
+            return
+        if run.tool_provenance_status in {
+            ToolProvenanceStatus.COMPLETE.value,
+            ToolProvenanceStatus.PARTIAL.value,
+            ToolProvenanceStatus.CONFLICTING.value,
+        }:
+            return
+        await session.execute(
+            delete(RunToolProvenance).where(
+                RunToolProvenance.workspace_id == workspace_id,
+                RunToolProvenance.agent_run_id == run_id,
+            )
+        )
+        for sequence_number, tool in enumerate(reconciliation.tools):
+            session.add(
+                RunToolProvenance(
+                    workspace_id=workspace_id,
+                    agent_run_id=run_id,
+                    sequence_number=sequence_number,
+                    call_message_id=tool.call_message_id,
+                    result_message_id=tool.result_message_id,
+                    tool_call_id=tool.tool_call_id,
+                    tool_name=tool.tool_name,
+                    arguments=tool.arguments,
+                    result=tool.result,
+                )
+            )
+        run.hermes_resolved_session_id = resolved_session_id
+        run.tool_provenance_status = reconciliation.status.value
+        run.tool_provenance_reason = reconciliation.reason
+        run.tool_provenance_checked_at = utc_now()
+        await session.commit()
+
+
+async def reconcile_run_provenance(
+    session_factory: async_sessionmaker[AsyncSession],
+    hermes: HermesClient,
+    workspace_id: UUID,
+    run_id: UUID,
+) -> None:
+    async with session_factory() as session:
+        row = (
+            await session.execute(
+                select(
+                    AgentRun.hermes_session_id,
+                    AgentRun.hermes_message_cursor,
+                    AgentRun.input,
+                    AgentRun.tool_provenance_status,
+                    RunEvent.event_type,
+                    RunEvent.payload,
+                )
+                .join(
+                    RunEvent,
+                    (RunEvent.workspace_id == AgentRun.workspace_id)
+                    & (RunEvent.agent_run_id == AgentRun.id),
+                )
+                .where(
+                    AgentRun.id == run_id,
+                    AgentRun.workspace_id == workspace_id,
+                    RunEvent.event_type.in_(TERMINAL_EVENTS),
+                )
+                .order_by(RunEvent.sequence_number.desc())
+                .limit(1)
+            )
+        ).one_or_none()
+    if row is None:
+        return
+    (
+        session_id,
+        cursor,
+        run_input,
+        provenance_status,
+        terminal_event,
+        terminal_payload,
+    ) = row
+    if provenance_status in {
+        ToolProvenanceStatus.COMPLETE.value,
+        ToolProvenanceStatus.PARTIAL.value,
+        ToolProvenanceStatus.CONFLICTING.value,
+    }:
+        return
+    if session_id is None or cursor is None or run_input is None:
+        await persist_reconciliation(
+            session_factory,
+            workspace_id,
+            run_id,
+            Reconciliation(
+                ToolProvenanceStatus.UNAVAILABLE,
+                "pre_submit_transcript_unavailable",
+            ),
+            resolved_session_id=None,
+        )
+        return
+    try:
+        transcript = await hermes.session_messages(session_id)
+    except (HermesError, httpx.HTTPError, ValueError):
+        await persist_reconciliation(
+            session_factory,
+            workspace_id,
+            run_id,
+            Reconciliation(
+                ToolProvenanceStatus.UNAVAILABLE,
+                "session_unavailable",
+            ),
+            resolved_session_id=None,
+        )
+        return
+    terminal_output = None
+    if terminal_event == "run.completed":
+        output = terminal_payload.get("output")
+        terminal_output = output if isinstance(output, str) else ""
+    await persist_reconciliation(
+        session_factory,
+        workspace_id,
+        run_id,
+        reconcile_transcript(transcript, cursor, run_input, terminal_output),
+        resolved_session_id=transcript.resolved_session_id,
+    )
 
 
 async def mark_indeterminate(
@@ -368,6 +758,9 @@ async def mark_indeterminate(
         run.status = AgentRunStatus.INDETERMINATE.value
         run.finished_at = None
         run.event_stream_complete = False
+        run.tool_provenance_status = ToolProvenanceStatus.UNAVAILABLE.value
+        run.tool_provenance_reason = "run_state_indeterminate"
+        run.tool_provenance_checked_at = utc_now()
         if run.hermes_run_id is None and hermes_run_id is not None:
             run.hermes_run_id = hermes_run_id
         await session.commit()
@@ -404,6 +797,9 @@ async def mark_rejected(
         )
         run.status = AgentRunStatus.FAILED.value
         run.finished_at = utc_now()
+        run.tool_provenance_status = ToolProvenanceStatus.UNAVAILABLE.value
+        run.tool_provenance_reason = "run_not_accepted"
+        run.tool_provenance_checked_at = utc_now()
         await session.commit()
 
 
@@ -481,6 +877,9 @@ async def persist_projected_event(
         if event_type in TERMINAL_EVENTS:
             run.finished_at = utc_now()
             run.event_stream_complete = stream_complete
+            run.tool_provenance_status = ToolProvenanceStatus.UNAVAILABLE.value
+            run.tool_provenance_reason = "reconciliation_pending"
+            run.tool_provenance_checked_at = None
             if event_type == "run.completed":
                 run.status = AgentRunStatus.SUCCEEDED.value
                 output = payload.get("output")
@@ -569,6 +968,12 @@ async def finalize_projection_failure(
                 f"run.{terminal_snapshot['status']}",
                 payload,
             )
+            await reconcile_run_provenance(
+                session_factory,
+                hermes,
+                workspace_id,
+                run_id,
+            )
             return
         except SQLAlchemyError:
             pass
@@ -621,8 +1026,20 @@ async def project_run(
                         f"run.{upstream_status}",
                         terminal_payload,
                     )
+                    await reconcile_run_provenance(
+                        session_factory,
+                        hermes,
+                        workspace_id,
+                        run_id,
+                    )
                     return
             if event_type in TERMINAL_EVENTS:
+                await reconcile_run_provenance(
+                    session_factory,
+                    hermes,
+                    workspace_id,
+                    run_id,
+                )
                 return
     except (HermesError, httpx.HTTPError, ValueError, SQLAlchemyError):
         await finalize_projection_failure(
@@ -651,6 +1068,12 @@ async def project_run(
                 f"run.{upstream_status}",
                 payload,
             )
+            await reconcile_run_provenance(
+                session_factory,
+                hermes,
+                workspace_id,
+                run_id,
+            )
             return
         resolution = await stop_run_until_resolved(hermes, hermes_run_id)
         terminal_snapshot = resolution.terminal_snapshot
@@ -667,6 +1090,12 @@ async def project_run(
                 run_id,
                 f"run.{terminal_snapshot['status']}",
                 payload,
+            )
+            await reconcile_run_provenance(
+                session_factory,
+                hermes,
+                workspace_id,
+                run_id,
             )
             return
         await mark_indeterminate(
@@ -701,6 +1130,44 @@ async def get_run(
         started_at=run.started_at,
         finished_at=run.finished_at,
         projection_gap=await has_projection_gap(session, run),
+        tool_provenance_status=run.tool_provenance_status,
+        tool_provenance_reason=run.tool_provenance_reason,
+        tool_provenance_complete=(
+            run.tool_provenance_status == ToolProvenanceStatus.COMPLETE.value
+        ),
+    )
+
+
+@router.get(
+    "/{conversation_id}/runs/{run_id}/provenance",
+    response_model=RunProvenanceResponse,
+)
+async def get_run_provenance(
+    workspace_id: UUID,
+    conversation_id: UUID,
+    run_id: UUID,
+    session: Session,
+) -> RunProvenanceResponse:
+    run = await scoped_run(session, workspace_id, conversation_id, run_id)
+    tools = (
+        await session.scalars(
+            select(RunToolProvenance)
+            .where(
+                RunToolProvenance.workspace_id == workspace_id,
+                RunToolProvenance.agent_run_id == run_id,
+            )
+            .order_by(RunToolProvenance.sequence_number)
+        )
+    ).all()
+    return RunProvenanceResponse(
+        status=run.tool_provenance_status,
+        reason=run.tool_provenance_reason,
+        checked_at=run.tool_provenance_checked_at,
+        resolved_session_id=run.hermes_resolved_session_id,
+        items=[
+            ToolProvenanceResponse.model_validate(tool, from_attributes=True)
+            for tool in tools
+        ],
     )
 
 
@@ -741,10 +1208,23 @@ async def list_run_events(
             )
         expected += 1
     return RunEventPage(
-        items=[public_event(event) for event in page],
+        items=[
+            public_event(
+                event,
+                tool_provenance_complete=(
+                    run.tool_provenance_status
+                    == ToolProvenanceStatus.COMPLETE.value
+                ),
+            )
+            for event in page
+        ],
         next_cursor=page[-1].sequence_number if len(events) > limit else None,
         event_stream_complete=run.event_stream_complete,
         projection_gap=await has_projection_gap(session, run),
+        tool_provenance_status=run.tool_provenance_status,
+        tool_provenance_complete=(
+            run.tool_provenance_status == ToolProvenanceStatus.COMPLETE.value
+        ),
     )
 
 
@@ -819,6 +1299,15 @@ async def create_run(
     ]
     hermes_session_id = f"helm:{workspace_id}:conversation:{conversation_id}"
     hermes_session_key = f"helm:workspace:{workspace_id}"
+    try:
+        transcript = await hermes.session_messages(hermes_session_id)
+        hermes_message_cursor = (
+            transcript.messages[-1]["id"] if transcript.messages else 0
+        )
+    except HermesSessionMissing:
+        hermes_message_cursor = 0
+    except (HermesError, httpx.HTTPError, ValueError):
+        hermes_message_cursor = None
     run = AgentRun(
         workspace_id=workspace_id,
         conversation_id=conversation_id,
@@ -826,6 +1315,7 @@ async def create_run(
         input=body.content,
         submission_attempted_at=utc_now(),
         hermes_session_id=hermes_session_id,
+        hermes_message_cursor=hermes_message_cursor,
     )
     session.add(run)
     try:

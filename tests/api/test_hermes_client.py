@@ -4,9 +4,11 @@ import json
 import httpx
 import pytest
 from helm.integrations.hermes import (
+    MAX_SESSION_RESPONSE_BYTES,
     HermesClient,
     HermesError,
     HermesRunRejected,
+    HermesSessionMissing,
     HermesSubmissionUncertain,
 )
 
@@ -29,6 +31,7 @@ def test_runs_contract_and_sse_parsing() -> None:
                         "run_status": True,
                         "run_events_sse": True,
                         "run_stop": True,
+                        "session_resources": True,
                     },
                     "endpoints": {
                         "runs": {"method": "POST", "path": "/v1/runs"},
@@ -43,6 +46,10 @@ def test_runs_contract_and_sse_parsing() -> None:
                         "run_stop": {
                             "method": "POST",
                             "path": "/v1/runs/{run_id}/stop",
+                        },
+                        "session_messages": {
+                            "method": "GET",
+                            "path": "/api/sessions/{session_id}/messages",
                         },
                     },
                 },
@@ -179,6 +186,7 @@ def test_submission_errors_distinguish_rejection_from_uncertainty(
                         "run_status",
                         "run_stop",
                         "run_submission",
+                        "session_resources",
                     )},
                     "endpoints": {
                         name: {"method": method, "path": path}
@@ -187,6 +195,10 @@ def test_submission_errors_distinguish_rejection_from_uncertainty(
                             "run_status": ("GET", "/v1/runs/{run_id}"),
                             "run_events": ("GET", "/v1/runs/{run_id}/events"),
                             "run_stop": ("POST", "/v1/runs/{run_id}/stop"),
+                            "session_messages": (
+                                "GET",
+                                "/api/sessions/{session_id}/messages",
+                            ),
                         }.items()
                     },
                 },
@@ -201,5 +213,77 @@ def test_submission_errors_distinguish_rejection_from_uncertainty(
         )
         with pytest.raises(error_type):
             await client.submit_run("Hello", "session", "workspace", [])
+
+    asyncio.run(exercise())
+
+
+def test_session_messages_are_bounded_and_drop_reasoning() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer test-key"
+        assert request.url.raw_path == b"/api/sessions/helm%3Aworkspace%3Aone/messages"
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "session_id": "compressed-tip",
+                "data": [
+                    {
+                        "id": 7,
+                        "session_id": "compressed-tip",
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [],
+                        "reasoning": "never expose this",
+                        "reasoning_content": "or this",
+                    }
+                ],
+            },
+        )
+
+    async def exercise() -> None:
+        client = HermesClient(
+            "http://hermes:8642",
+            "test-key",
+            httpx.MockTransport(handler),
+        )
+        transcript = await client.session_messages("helm:workspace:one")
+        assert transcript.resolved_session_id == "compressed-tip"
+        assert transcript.messages[0] == {
+            "id": 7,
+            "role": "assistant",
+            "content": "",
+            "tool_call_id": None,
+            "tool_calls": [],
+            "tool_name": None,
+        }
+        assert "reasoning" not in str(transcript)
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    ("response", "error_type"),
+    [
+        (httpx.Response(404), HermesSessionMissing),
+        (httpx.Response(503), httpx.HTTPStatusError),
+        (httpx.Response(200, content=b"not-json"), HermesError),
+        (
+            httpx.Response(200, content=b"x" * (MAX_SESSION_RESPONSE_BYTES + 1)),
+            HermesError,
+        ),
+    ],
+)
+def test_session_message_failures_are_explicit(
+    response: httpx.Response,
+    error_type: type[Exception],
+) -> None:
+    async def exercise() -> None:
+        client = HermesClient(
+            "http://hermes:8642",
+            "test-key",
+            httpx.MockTransport(lambda request: response),
+        )
+        with pytest.raises(error_type):
+            await client.session_messages("session")
 
     asyncio.run(exercise())
