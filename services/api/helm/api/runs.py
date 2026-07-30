@@ -1,11 +1,23 @@
 import asyncio
+import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -40,6 +52,17 @@ ACTIVE_STATUSES = {
     AgentRunStatus.INDETERMINATE.value,
 }
 TERMINAL_EVENTS = {"run.completed", "run.failed", "run.cancelled"}
+STREAM_CLOSED_STATUSES = {
+    AgentRunStatus.INDETERMINATE.value,
+    AgentRunStatus.SUCCEEDED.value,
+    AgentRunStatus.FAILED.value,
+    AgentRunStatus.CANCELLED.value,
+}
+MAX_EVENT_PAYLOAD_BYTES = 64 * 1024
+MAX_SEQUENCE_NUMBER = 2**63 - 1
+EVENT_PAGE_LIMIT = 100
+SSE_POLL_INTERVAL_SECONDS = 0.25
+SSE_HEARTBEAT_SECONDS = 15.0
 SAFE_EVENT_FIELDS = {
     "message.delta": ("delta",),
     "tool.started": ("tool", "preview"),
@@ -84,8 +107,217 @@ class RunResponse(BaseModel):
     created_at: datetime
 
 
+class RunDetailResponse(RunResponse):
+    started_at: datetime | None
+    finished_at: datetime | None
+    projection_gap: bool
+    tool_provenance_complete: Literal[False] = False
+
+
+class RunEventResponse(BaseModel):
+    sequence_number: int
+    event_type: str
+    payload: dict[str, object]
+    created_at: datetime
+    tool_provenance_complete: Literal[False] = False
+
+
+class RunEventPage(BaseModel):
+    items: list[RunEventResponse]
+    next_cursor: int | None
+    event_stream_complete: bool
+    projection_gap: bool
+    tool_provenance_complete: Literal[False] = False
+
+
 def request_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
     return cast(async_sessionmaker[AsyncSession], request.app.state.session_factory)
+
+
+async def scoped_run(
+    session: AsyncSession,
+    workspace_id: UUID,
+    conversation_id: UUID,
+    run_id: UUID,
+) -> AgentRun:
+    run = await session.scalar(
+        select(AgentRun).where(
+            AgentRun.id == run_id,
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.conversation_id == conversation_id,
+        )
+    )
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    return run
+
+
+async def has_projection_gap(
+    session: AsyncSession,
+    run: AgentRun,
+) -> bool:
+    if run.status == AgentRunStatus.INDETERMINATE.value:
+        return True
+    payloads = (
+        await session.scalars(
+            select(RunEvent.payload).where(
+                RunEvent.workspace_id == run.workspace_id,
+                RunEvent.agent_run_id == run.id,
+                RunEvent.event_type.in_(TERMINAL_EVENTS),
+            )
+        )
+    ).all()
+    return any(
+        isinstance(payload, dict) and payload.get("projection_gap") is True
+        for payload in payloads
+    )
+
+
+def public_event(event: RunEvent) -> RunEventResponse:
+    payload: dict[str, object]
+    try:
+        encoded = json.dumps(
+            event.payload,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        decoded = json.loads(encoded)
+        if len(encoded) > MAX_EVENT_PAYLOAD_BYTES or not isinstance(decoded, dict):
+            raise ValueError
+        payload = cast(dict[str, object], decoded)
+    except (OverflowError, RecursionError, TypeError, UnicodeError, ValueError):
+        payload = {
+            "unavailable": True,
+            "reason": "malformed_or_oversized_payload",
+        }
+    return RunEventResponse(
+        sequence_number=event.sequence_number,
+        event_type=event.event_type,
+        payload=payload,
+        created_at=event.created_at,
+    )
+
+
+async def validate_event_cursor(
+    session: AsyncSession,
+    run: AgentRun,
+    after: int,
+) -> None:
+    if after < 0:
+        return
+    exists = await session.scalar(
+        select(RunEvent.id).where(
+            RunEvent.workspace_id == run.workspace_id,
+            RunEvent.agent_run_id == run.id,
+            RunEvent.sequence_number == after,
+        )
+    )
+    if exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="event cursor does not exist for this run",
+        )
+
+
+async def validate_persisted_sequence(
+    session: AsyncSession,
+    run: AgentRun,
+) -> None:
+    count, first, last = (
+        await session.execute(
+            select(
+                func.count(RunEvent.id),
+                func.min(RunEvent.sequence_number),
+                func.max(RunEvent.sequence_number),
+            ).where(
+                RunEvent.workspace_id == run.workspace_id,
+                RunEvent.agent_run_id == run.id,
+            )
+        )
+    ).one()
+    if count and (first != 0 or last is None or count != last + 1):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="persisted event sequence contains a gap",
+        )
+
+
+def resume_sequence(after: int, last_event_id: str | None) -> int:
+    if last_event_id is None:
+        return after
+    try:
+        sequence_number = int(last_event_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Last-Event-ID must be a valid event sequence",
+        ) from error
+    if sequence_number < 0 or sequence_number > MAX_SEQUENCE_NUMBER:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Last-Event-ID must be a valid event sequence",
+        )
+    return sequence_number
+
+
+def sse_frame(event: RunEventResponse) -> str:
+    data = json.dumps(event.model_dump(mode="json"), separators=(",", ":"))
+    return f"id: {event.sequence_number}\nevent: run-event\ndata: {data}\n\n"
+
+
+async def persisted_event_stream(
+    request: Request,
+    session_factory: async_sessionmaker[AsyncSession],
+    workspace_id: UUID,
+    conversation_id: UUID,
+    run_id: UUID,
+    after: int,
+) -> AsyncIterator[str]:
+    cursor = after
+    last_activity = asyncio.get_running_loop().time()
+    while not await request.is_disconnected():
+        async with session_factory() as session:
+            run = await session.scalar(
+                select(AgentRun).where(
+                    AgentRun.id == run_id,
+                    AgentRun.workspace_id == workspace_id,
+                    AgentRun.conversation_id == conversation_id,
+                )
+            )
+            if run is None:
+                return
+            events = (
+                await session.scalars(
+                    select(RunEvent)
+                    .where(
+                        RunEvent.workspace_id == workspace_id,
+                        RunEvent.agent_run_id == run_id,
+                        RunEvent.sequence_number > cursor,
+                    )
+                    .order_by(RunEvent.sequence_number)
+                    .limit(EVENT_PAGE_LIMIT)
+                )
+            ).all()
+
+        if events:
+            expected = cursor + 1
+            for event in events:
+                if event.sequence_number != expected:
+                    return
+                yield sse_frame(public_event(event))
+                cursor = event.sequence_number
+                expected += 1
+            last_activity = asyncio.get_running_loop().time()
+            continue
+
+        if run.status in STREAM_CLOSED_STATUSES:
+            return
+        now = asyncio.get_running_loop().time()
+        if now - last_activity >= SSE_HEARTBEAT_SECONDS:
+            yield ": keep-alive\n\n"
+            last_activity = now
+        await asyncio.sleep(SSE_POLL_INTERVAL_SECONDS)
 
 
 def safe_event(event: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -229,7 +461,7 @@ async def persist_projected_event(
             .where(AgentRun.id == run_id, AgentRun.workspace_id == workspace_id)
             .with_for_update()
         )
-        if run is None or (event_type in TERMINAL_EVENTS and run.finished_at is not None):
+        if run is None or run.status != AgentRunStatus.RUNNING.value:
             return
         last_sequence = await session.scalar(
             select(func.max(RunEvent.sequence_number)).where(
@@ -451,6 +683,101 @@ async def project_run(
             run_id,
             hermes_run_id,
         )
+
+
+@router.get(
+    "/{conversation_id}/runs/{run_id}",
+    response_model=RunDetailResponse,
+)
+async def get_run(
+    workspace_id: UUID,
+    conversation_id: UUID,
+    run_id: UUID,
+    session: Session,
+) -> RunDetailResponse:
+    run = await scoped_run(session, workspace_id, conversation_id, run_id)
+    return RunDetailResponse(
+        **RunResponse.model_validate(run).model_dump(),
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        projection_gap=await has_projection_gap(session, run),
+    )
+
+
+@router.get(
+    "/{conversation_id}/runs/{run_id}/events",
+    response_model=RunEventPage,
+)
+async def list_run_events(
+    workspace_id: UUID,
+    conversation_id: UUID,
+    run_id: UUID,
+    session: Session,
+    after: Annotated[int, Query(ge=-1, le=MAX_SEQUENCE_NUMBER)] = -1,
+    limit: Annotated[int, Query(ge=1, le=EVENT_PAGE_LIMIT)] = EVENT_PAGE_LIMIT,
+) -> RunEventPage:
+    run = await scoped_run(session, workspace_id, conversation_id, run_id)
+    await validate_persisted_sequence(session, run)
+    await validate_event_cursor(session, run, after)
+    events = (
+        await session.scalars(
+            select(RunEvent)
+            .where(
+                RunEvent.workspace_id == workspace_id,
+                RunEvent.agent_run_id == run_id,
+                RunEvent.sequence_number > after,
+            )
+            .order_by(RunEvent.sequence_number)
+            .limit(limit + 1)
+        )
+    ).all()
+    page = events[:limit]
+    expected = after + 1
+    for event in page:
+        if event.sequence_number != expected:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="persisted event sequence contains a gap",
+            )
+        expected += 1
+    return RunEventPage(
+        items=[public_event(event) for event in page],
+        next_cursor=page[-1].sequence_number if len(events) > limit else None,
+        event_stream_complete=run.event_stream_complete,
+        projection_gap=await has_projection_gap(session, run),
+    )
+
+
+@router.get("/{conversation_id}/runs/{run_id}/events/stream")
+async def stream_run_events(
+    workspace_id: UUID,
+    conversation_id: UUID,
+    run_id: UUID,
+    request: Request,
+    after: Annotated[int, Query(ge=-1, le=MAX_SEQUENCE_NUMBER)] = -1,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    session_factory = request_session_factory(request)
+    resume_after = resume_sequence(after, last_event_id)
+    async with session_factory() as session:
+        run = await scoped_run(session, workspace_id, conversation_id, run_id)
+        await validate_persisted_sequence(session, run)
+        await validate_event_cursor(session, run, resume_after)
+    return StreamingResponse(
+        persisted_event_stream(
+            request,
+            session_factory,
+            workspace_id,
+            conversation_id,
+            run_id,
+            resume_after,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post(
