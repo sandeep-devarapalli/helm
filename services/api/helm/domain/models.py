@@ -51,6 +51,14 @@ class AgentRunStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ToolProvenanceStatus(StrEnum):
+    PENDING = "pending"
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    UNAVAILABLE = "unavailable"
+    CONFLICTING = "conflicting"
+
+
 class Workspace(Base):
     __tablename__ = "workspaces"
     __table_args__ = (
@@ -202,6 +210,25 @@ class AgentRun(Base):
             "hermes_session_id is null or length(hermes_session_id) between 1 and 256",
             name="hermes_session_id_length",
         ),
+        CheckConstraint(
+            "hermes_message_cursor is null or hermes_message_cursor >= 0",
+            name="hermes_message_cursor_nonnegative",
+        ),
+        CheckConstraint(
+            "hermes_resolved_session_id is null "
+            "or length(hermes_resolved_session_id) between 1 and 256",
+            name="hermes_resolved_session_id_length",
+        ),
+        CheckConstraint(
+            "tool_provenance_status in "
+            "('pending', 'complete', 'partial', 'unavailable', 'conflicting')",
+            name="tool_provenance_status_allowed",
+        ),
+        CheckConstraint(
+            "tool_provenance_reason is null "
+            "or length(tool_provenance_reason) between 1 and 120",
+            name="tool_provenance_reason_length",
+        ),
         Index(
             "ix_agent_runs_workspace_conversation_created_id",
             "workspace_id",
@@ -246,11 +273,23 @@ class AgentRun(Base):
     )
     hermes_run_id: Mapped[str | None] = mapped_column(Text)
     hermes_session_id: Mapped[str | None] = mapped_column(Text)
+    hermes_message_cursor: Mapped[int | None] = mapped_column(BigInteger)
+    hermes_resolved_session_id: Mapped[str | None] = mapped_column(Text)
     event_stream_complete: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
         server_default="false",
+    )
+    tool_provenance_status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default=ToolProvenanceStatus.PENDING.value,
+        server_default=ToolProvenanceStatus.PENDING.value,
+    )
+    tool_provenance_reason: Mapped[str | None] = mapped_column(Text)
+    tool_provenance_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
     )
 
 
@@ -285,6 +324,57 @@ class RunEvent(Base):
         default=dict,
         server_default="{}",
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=func.now(),
+    )
+
+
+class RunToolProvenance(Base):
+    __tablename__ = "run_tool_provenance"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("workspace_id", "agent_run_id"),
+            ("agent_runs.workspace_id", "agent_runs.id"),
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("workspace_id", "agent_run_id", "sequence_number"),
+        UniqueConstraint("workspace_id", "agent_run_id", "tool_call_id"),
+        CheckConstraint("sequence_number >= 0", name="sequence_nonnegative"),
+        CheckConstraint("call_message_id > 0", name="call_message_id_positive"),
+        CheckConstraint(
+            "result_message_id is null or result_message_id > call_message_id",
+            name="result_after_call",
+        ),
+        CheckConstraint(
+            "length(trim(tool_call_id)) between 1 and 256",
+            name="tool_call_id_length",
+        ),
+        CheckConstraint(
+            "length(trim(tool_name)) between 1 and 200",
+            name="tool_name_length",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        Identity(),
+        primary_key=True,
+    )
+    workspace_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    agent_run_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    sequence_number: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    call_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    result_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    tool_call_id: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_name: Mapped[str] = mapped_column(Text, nullable=False)
+    arguments: Mapped[object] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
+    result: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

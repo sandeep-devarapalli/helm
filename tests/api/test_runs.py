@@ -6,11 +6,29 @@ from uuid import UUID, uuid4
 import helm.api.runs as runs_api
 import httpx
 import pytest
-from helm.api.runs import persisted_event_stream, recover_orphaned_runs
-from helm.domain.models import AgentRun, AgentRunStatus, Message, RunEvent, utc_now
+from helm.api.runs import (
+    Reconciliation,
+    persist_reconciliation,
+    persisted_event_stream,
+    reconcile_run_provenance,
+    reconcile_transcript,
+    recover_orphaned_runs,
+)
+from helm.database import Base
+from helm.domain.models import (
+    AgentRun,
+    AgentRunStatus,
+    Message,
+    RunEvent,
+    RunToolProvenance,
+    ToolProvenanceStatus,
+    utc_now,
+)
 from helm.integrations.hermes import (
     HermesRunRejected,
+    HermesSessionMissing,
     HermesSubmissionUncertain,
+    HermesTranscript,
     get_hermes_client,
 )
 from helm.main import app
@@ -29,14 +47,17 @@ class FakeHermes:
         submit_error: Exception | None = None,
         status: dict[str, Any] | None = None,
         stop_error: Exception | None = None,
+        transcripts: list[HermesTranscript | Exception] | None = None,
     ) -> None:
         self.projected_events = events or []
         self.submit_error = submit_error
         self.snapshot = status or {"status": "running"}
         self.stop_error = stop_error
+        self.transcripts = transcripts
         self.submissions: list[tuple[str, str, str, list[dict[str, str]]]] = []
         self.stop_attempts: list[str] = []
         self.stopped: list[str] = []
+        self.session_message_calls = 0
 
     async def submit_run(
         self,
@@ -54,6 +75,52 @@ class FakeHermes:
         assert run_id == HERMES_RUN_ID
         for event in self.projected_events:
             yield event
+
+    async def session_messages(self, session_id: str) -> HermesTranscript:
+        self.session_message_calls += 1
+        if self.transcripts is not None:
+            transcript = self.transcripts[
+                min(self.session_message_calls - 1, len(self.transcripts) - 1)
+            ]
+            if isinstance(transcript, Exception):
+                raise transcript
+            return transcript
+        if self.session_message_calls == 1:
+            raise HermesSessionMissing("new session")
+        content = self.submissions[-1][0]
+        output = next(
+            (
+                event.get("output")
+                for event in reversed(self.projected_events)
+                if event.get("event") == "run.completed"
+            ),
+            self.snapshot.get("output"),
+        )
+        messages: list[dict[str, Any]] = [
+            {
+                "id": 1,
+                "role": "user",
+                "content": content,
+                "tool_call_id": None,
+                "tool_calls": None,
+                "tool_name": None,
+            }
+        ]
+        if isinstance(output, str):
+            messages.append(
+                {
+                    "id": 2,
+                    "role": "assistant",
+                    "content": output,
+                    "tool_call_id": None,
+                    "tool_calls": None,
+                    "tool_name": None,
+                }
+            )
+        return HermesTranscript(
+            resolved_session_id=session_id,
+            messages=tuple(messages),
+        )
 
     async def status(self, run_id: str) -> dict[str, Any]:
         assert run_id == HERMES_RUN_ID
@@ -194,6 +261,460 @@ def test_run_projects_terminal_output(api_context) -> None:
     )
     assert session_key == f"helm:workspace:{api_context.workspace_a}"
     assert history == []
+
+
+def test_terminal_run_reconciles_tool_provenance_idempotently(api_context) -> None:
+    conversation_id = create_conversation(api_context)
+    session_id = f"helm:{api_context.workspace_a}:conversation:{conversation_id}"
+    transcript = HermesTranscript(
+        resolved_session_id=f"{session_id}:compressed",
+        messages=(
+            {
+                "id": 10,
+                "role": "user",
+                "content": "Resolve AAPL",
+                "tool_call_id": None,
+                "tool_calls": None,
+                "tool_name": None,
+            },
+            {
+                "id": 11,
+                "role": "assistant",
+                "content": "",
+                "tool_call_id": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "search_symbol",
+                            "arguments": '{"query":"AAPL"}',
+                        },
+                    }
+                ],
+                "tool_name": None,
+            },
+            {
+                "id": 12,
+                "role": "tool",
+                "content": '{"symbol":"AAPL.US"}',
+                "tool_call_id": "call_1",
+                "tool_calls": None,
+                "tool_name": "search_symbol",
+            },
+            {
+                "id": 13,
+                "role": "assistant",
+                "content": "AAPL.US Apple Inc.",
+                "tool_call_id": None,
+                "tool_calls": None,
+                "tool_name": None,
+            },
+        ),
+    )
+    hermes = FakeHermes(
+        events=[{"event": "run.completed", "output": "AAPL.US Apple Inc."}],
+        transcripts=[
+            HermesTranscript(resolved_session_id=session_id, messages=()),
+            transcript,
+        ],
+    )
+    app.dependency_overrides[get_hermes_client] = lambda: hermes
+    try:
+        response = api_context.client.post(
+            f"/workspaces/{api_context.workspace_a}/conversations/{conversation_id}/runs",
+            json={"content": "Resolve AAPL"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_hermes_client, None)
+
+    assert response.status_code == 202
+    run_id = UUID(response.json()["id"])
+    base = (
+        f"/workspaces/{api_context.workspace_a}/conversations/"
+        f"{conversation_id}/runs/{run_id}"
+    )
+    detail = api_context.client.get(base)
+    provenance = api_context.client.get(f"{base}/provenance")
+    foreign = api_context.client.get(
+        f"/workspaces/{api_context.workspace_b}/conversations/"
+        f"{conversation_id}/runs/{run_id}/provenance"
+    )
+
+    assert detail.json()["tool_provenance_status"] == "complete"
+    assert detail.json()["tool_provenance_complete"] is True
+    assert detail.json()["structured_citations_available"] is False
+    assert provenance.json()["status"] == "complete"
+    assert provenance.json()["resolved_session_id"] == f"{session_id}:compressed"
+    assert provenance.json()["items"] == [
+        {
+            "sequence_number": 0,
+            "call_message_id": 11,
+            "result_message_id": 12,
+            "tool_call_id": "call_1",
+            "tool_name": "search_symbol",
+            "arguments": {"query": "AAPL"},
+            "result": '{"symbol":"AAPL.US"}',
+        }
+    ]
+    assert provenance.json()["structured_citations_available"] is False
+    assert foreign.status_code == 404
+
+    async def retry_and_inspect() -> None:
+        await reconcile_run_provenance(
+            api_context.session_factory,
+            hermes,
+            api_context.workspace_a,
+            run_id,
+        )
+        async with api_context.session_factory() as session:
+            tools = (
+                await session.scalars(
+                    select(RunToolProvenance).where(
+                        RunToolProvenance.agent_run_id == run_id
+                    )
+                )
+            ).all()
+            messages = (
+                await session.scalars(
+                    select(Message).where(Message.conversation_id == conversation_id)
+                )
+            ).all()
+            events = (
+                await session.scalars(
+                    select(RunEvent).where(RunEvent.agent_run_id == run_id)
+                )
+            ).all()
+            assert len(tools) == 1
+            assert len(messages) == 2
+            assert len(events) == 3
+
+    asyncio.run(retry_and_inspect())
+    assert hermes.session_message_calls == 2
+
+
+def test_missing_tool_result_is_partial_without_reconstructing_output(
+    api_context,
+) -> None:
+    conversation_id = create_conversation(api_context)
+    session_id = f"helm:{api_context.workspace_a}:conversation:{conversation_id}"
+    hermes = FakeHermes(
+        events=[{"event": "run.completed", "output": "Evidence is incomplete."}],
+        transcripts=[
+            HermesTranscript(resolved_session_id=session_id, messages=()),
+            HermesTranscript(
+                resolved_session_id=session_id,
+                messages=(
+                    {
+                        "id": 1,
+                        "role": "user",
+                        "content": "Research AAPL",
+                        "tool_call_id": None,
+                        "tool_calls": None,
+                        "tool_name": None,
+                    },
+                    {
+                        "id": 2,
+                        "role": "assistant",
+                        "content": "",
+                        "tool_call_id": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_missing",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_market_data",
+                                    "arguments": '{"symbol":"AAPL.US"}',
+                                },
+                            }
+                        ],
+                        "tool_name": None,
+                    },
+                    {
+                        "id": 3,
+                        "role": "assistant",
+                        "content": "Evidence is incomplete.",
+                        "tool_call_id": None,
+                        "tool_calls": None,
+                        "tool_name": None,
+                    },
+                ),
+            ),
+        ],
+    )
+    app.dependency_overrides[get_hermes_client] = lambda: hermes
+    try:
+        response = api_context.client.post(
+            f"/workspaces/{api_context.workspace_a}/conversations/{conversation_id}/runs",
+            json={"content": "Research AAPL"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_hermes_client, None)
+
+    run_id = response.json()["id"]
+    provenance = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/"
+        f"{conversation_id}/runs/{run_id}/provenance"
+    )
+    assert provenance.json()["status"] == "partial"
+    assert provenance.json()["reason"] == "missing_tool_result"
+    assert provenance.json()["items"][0]["result"] is None
+
+
+def test_tool_activity_after_terminal_output_is_conflicting() -> None:
+    reconciliation = reconcile_transcript(
+        HermesTranscript(
+            resolved_session_id="session",
+            messages=(
+                {
+                    "id": 1,
+                    "role": "user",
+                    "content": "Research AAPL",
+                    "tool_call_id": None,
+                    "tool_calls": None,
+                    "tool_name": None,
+                },
+                {
+                    "id": 2,
+                    "role": "assistant",
+                    "content": "Final answer",
+                    "tool_call_id": None,
+                    "tool_calls": None,
+                    "tool_name": None,
+                },
+                {
+                    "id": 3,
+                    "role": "assistant",
+                    "content": "",
+                    "tool_call_id": None,
+                    "tool_calls": [
+                        {
+                            "id": "late_call",
+                            "type": "function",
+                            "function": {
+                                "name": "search_symbol",
+                                "arguments": '{"query":"AAPL"}',
+                            },
+                        }
+                    ],
+                    "tool_name": None,
+                },
+                {
+                    "id": 4,
+                    "role": "tool",
+                    "content": '{"symbol":"AAPL.US"}',
+                    "tool_call_id": "late_call",
+                    "tool_calls": None,
+                    "tool_name": "search_symbol",
+                },
+            ),
+        ),
+        0,
+        "Research AAPL",
+        "Final answer",
+    )
+
+    assert reconciliation.status == ToolProvenanceStatus.CONFLICTING
+    assert reconciliation.reason == "terminal_output_mismatch"
+
+
+def test_whitespace_tool_call_id_is_conflicting() -> None:
+    reconciliation = reconcile_transcript(
+        HermesTranscript(
+            resolved_session_id="session",
+            messages=(
+                {
+                    "id": 1,
+                    "role": "user",
+                    "content": "Research AAPL",
+                    "tool_call_id": None,
+                    "tool_calls": None,
+                    "tool_name": None,
+                },
+                {
+                    "id": 2,
+                    "role": "assistant",
+                    "content": "",
+                    "tool_call_id": None,
+                    "tool_calls": [
+                        {
+                            "id": " ",
+                            "type": "function",
+                            "function": {
+                                "name": "search_symbol",
+                                "arguments": '{"query":"AAPL"}',
+                            },
+                        }
+                    ],
+                    "tool_name": None,
+                },
+                {
+                    "id": 3,
+                    "role": "assistant",
+                    "content": "Final answer",
+                    "tool_call_id": None,
+                    "tool_calls": None,
+                    "tool_name": None,
+                },
+            ),
+        ),
+        0,
+        "Research AAPL",
+        "Final answer",
+    )
+
+    assert reconciliation.status == ToolProvenanceStatus.CONFLICTING
+    assert reconciliation.reason == "malformed_or_duplicate_tool_call"
+
+
+def test_conflicting_or_unavailable_provenance_cannot_create_orders(
+    api_context,
+) -> None:
+    conversation_id = create_conversation(api_context)
+    session_id = f"helm:{api_context.workspace_a}:conversation:{conversation_id}"
+    duplicate_call = {
+        "id": "duplicate",
+        "type": "function",
+        "function": {
+            "name": "search_symbol",
+            "arguments": '{"query":"NVDA"}',
+        },
+    }
+    hermes = FakeHermes(
+        events=[{"event": "run.completed", "output": "No action taken."}],
+        transcripts=[
+            HermesTranscript(resolved_session_id=session_id, messages=()),
+            HermesTranscript(
+                resolved_session_id=session_id,
+                messages=(
+                    {
+                        "id": 1,
+                        "role": "user",
+                        "content": "Research NVDA",
+                        "tool_call_id": None,
+                        "tool_calls": None,
+                        "tool_name": None,
+                    },
+                    {
+                        "id": 2,
+                        "role": "assistant",
+                        "content": "",
+                        "tool_call_id": None,
+                        "tool_calls": [duplicate_call, duplicate_call],
+                        "tool_name": None,
+                    },
+                    {
+                        "id": 3,
+                        "role": "assistant",
+                        "content": "No action taken.",
+                        "tool_call_id": None,
+                        "tool_calls": None,
+                        "tool_name": None,
+                    },
+                ),
+            ),
+        ],
+    )
+    app.dependency_overrides[get_hermes_client] = lambda: hermes
+    try:
+        response = api_context.client.post(
+            f"/workspaces/{api_context.workspace_a}/conversations/{conversation_id}/runs",
+            json={"content": "Research NVDA"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_hermes_client, None)
+
+    run_id = response.json()["id"]
+    provenance = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/"
+        f"{conversation_id}/runs/{run_id}/provenance"
+    )
+    assert provenance.json()["status"] == "conflicting"
+    assert provenance.json()["items"] == []
+    assert "orders" not in Base.metadata.tables
+    assert not any(
+        "/orders" in path for path in api_context.client.get("/openapi.json").json()["paths"]
+    )
+
+
+def test_pre_submit_session_failure_stays_visibly_unavailable(api_context) -> None:
+    conversation_id = create_conversation(api_context)
+    hermes = FakeHermes(
+        events=[{"event": "run.completed", "output": "Research completed."}],
+        transcripts=[httpx.ReadTimeout("Hermes session store unavailable")],
+    )
+    app.dependency_overrides[get_hermes_client] = lambda: hermes
+    try:
+        response = api_context.client.post(
+            f"/workspaces/{api_context.workspace_a}/conversations/{conversation_id}/runs",
+            json={"content": "Research MSFT"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_hermes_client, None)
+
+    run_id = response.json()["id"]
+    provenance = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/"
+        f"{conversation_id}/runs/{run_id}/provenance"
+    )
+    assert provenance.json()["status"] == "unavailable"
+    assert provenance.json()["reason"] == "pre_submit_transcript_unavailable"
+    assert provenance.json()["items"] == []
+    assert hermes.session_message_calls == 1
+
+
+def test_stale_reconciliation_cannot_downgrade_accepted_provenance(
+    api_context,
+) -> None:
+    conversation_id = create_conversation(api_context)
+    run_id = seed_run(api_context, conversation_id)
+
+    async def exercise() -> None:
+        async with api_context.session_factory() as session:
+            run = await session.get(AgentRun, run_id)
+            assert run is not None
+            run.tool_provenance_status = ToolProvenanceStatus.COMPLETE.value
+            run.tool_provenance_reason = None
+            session.add(
+                RunToolProvenance(
+                    workspace_id=api_context.workspace_a,
+                    agent_run_id=run_id,
+                    sequence_number=0,
+                    call_message_id=1,
+                    result_message_id=2,
+                    tool_call_id="accepted_call",
+                    tool_name="search_symbol",
+                    arguments={"query": "AAPL"},
+                    result='{"symbol":"AAPL.US"}',
+                )
+            )
+            await session.commit()
+
+        await persist_reconciliation(
+            api_context.session_factory,
+            api_context.workspace_a,
+            run_id,
+            Reconciliation(
+                ToolProvenanceStatus.CONFLICTING,
+                "stale_conflict",
+            ),
+            resolved_session_id="stale-session",
+        )
+
+        async with api_context.session_factory() as session:
+            run = await session.get(AgentRun, run_id)
+            tools = (
+                await session.scalars(
+                    select(RunToolProvenance).where(
+                        RunToolProvenance.agent_run_id == run_id
+                    )
+                )
+            ).all()
+            assert run is not None
+            assert run.tool_provenance_status == ToolProvenanceStatus.COMPLETE.value
+            assert [tool.tool_call_id for tool in tools] == ["accepted_call"]
+
+    asyncio.run(exercise())
 
 
 def test_submission_failure_is_audited_without_retry(api_context) -> None:
