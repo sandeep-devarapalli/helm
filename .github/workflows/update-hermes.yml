@@ -41,6 +41,10 @@ jobs:
             '.release=$release | .commit=$commit | .image=("docker.io/nousresearch/hermes-agent:"+$release) | .digest=$digest | .verified_at=$date | .compatibility="pending"' \
             runtime/hermes.lock > runtime/hermes.lock.tmp
           mv runtime/hermes.lock.tmp runtime/hermes.lock
+          jq --arg release "$tag" --arg commit "$commit" \
+            '.runtime_release=$release | .runtime_commit=$commit | .verified_at=null | .result="pending"' \
+            runtime/hermes.compatibility.json > runtime/hermes.compatibility.json.tmp
+          mv runtime/hermes.compatibility.json.tmp runtime/hermes.compatibility.json
           sed -i -E "s#image: docker.io/nousresearch/hermes-agent:[^@]+@sha256:[a-f0-9]+#image: docker.io/nousresearch/hermes-agent:${tag}@${digest}#" infra/docker-compose.yml
           sed -i -E "s#HELM_HERMES_VERSION: v[0-9.]+#HELM_HERMES_VERSION: ${tag}#" infra/docker-compose.yml
           python3 - "$tag" <<'PY'
@@ -67,7 +71,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add runtime/hermes.lock infra/docker-compose.yml THIRD_PARTY_NOTICES.md
+          git add runtime/hermes.lock runtime/hermes.compatibility.json infra/docker-compose.yml THIRD_PARTY_NOTICES.md
           git commit -m "chore: review Hermes ${TAG}"
           git push --force-with-lease origin "$branch"
           if gh pr view "$branch" >/dev/null 2>&1; then

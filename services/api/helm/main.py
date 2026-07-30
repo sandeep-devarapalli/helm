@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from helm import __version__
 from helm.api.conversations import router as conversations_router
+from helm.api.memory import router as memory_router
 from helm.api.runs import cleanup_upstream_run, recover_orphaned_runs
 from helm.api.runs import router as runs_router
 from helm.config import get_settings
@@ -54,6 +55,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(conversations_router)
+app.include_router(memory_router)
 app.include_router(runs_router)
 
 
