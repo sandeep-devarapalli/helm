@@ -5,12 +5,53 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const runtime = join(root, "runtime");
 const hermes = JSON.parse(await readFile(join(runtime, "hermes.lock"), "utf8"));
+const hermesCompatibility = JSON.parse(
+  await readFile(join(runtime, "hermes.compatibility.json"), "utf8"),
+);
 const vibe = JSON.parse(await readFile(join(runtime, "vibe.lock"), "utf8"));
 
 if (!/^v\d{4}\.\d+\.\d+(?:\.\d+)?$/.test(hermes.release)) throw new Error("Invalid Hermes release pin");
 if (!/^sha256:[a-f0-9]{64}$/.test(hermes.digest)) throw new Error("Hermes image must use an immutable digest");
 if (!/^v\d+\.\d+\.\d+$/.test(vibe.release)) throw new Error("Invalid Vibe release pin");
 if (!/^[a-f0-9]{40}$/.test(vibe.commit)) throw new Error("Vibe commit must be immutable");
+if (
+  hermesCompatibility.runtime_release !== hermes.release ||
+  hermesCompatibility.runtime_commit !== hermes.commit
+) {
+  throw new Error("Hermes compatibility fixture does not match the runtime lock");
+}
+if (
+  hermesCompatibility.result !== "m2-memory-approvals" ||
+  hermes.compatibility !== hermesCompatibility.result
+) {
+  throw new Error("Hermes memory compatibility review is incomplete");
+}
+const instructions = hermesCompatibility.contracts?.run_instructions;
+if (
+  instructions?.request_field !== "instructions" ||
+  instructions?.runtime_field !== "ephemeral_system_prompt" ||
+  instructions?.lifetime !== "current-run-only"
+) {
+  throw new Error("Hermes ephemeral instructions contract changed unexpectedly");
+}
+for (const source of [
+  instructions.request_mapping_source,
+  instructions.prompt_assembly_source,
+  instructions.persistent_prompt_exclusion_source,
+  hermesCompatibility.contracts?.memory?.configuration_source,
+]) {
+  if (typeof source !== "string" || !source.includes(`/blob/${hermes.release}/`)) {
+    throw new Error("Hermes compatibility source does not match the pinned release");
+  }
+}
+const memoryContract = hermesCompatibility.contracts?.memory;
+if (
+  memoryContract?.memory_enabled !== false ||
+  memoryContract?.user_profile_enabled !== false ||
+  memoryContract?.provider !== ""
+) {
+  throw new Error("Hermes compatibility fixture enables memory");
+}
 
 const profile = join(runtime, "hermes-profile");
 const required = ["distribution.yaml", "SOUL.md", "config.yaml", "mcp.json"];
@@ -23,6 +64,9 @@ if (!/^memory:\n(?:  .+\n)*  write_approval: true$/m.test(config)) {
 }
 if (!/^memory:\n  memory_enabled: false\n  user_profile_enabled: false$/m.test(config)) {
   throw new Error("Hermes built-in memory must remain disabled until workspace isolation exists");
+}
+if (!/^memory:\n(?:  .+\n)*  provider: ""$/m.test(config)) {
+  throw new Error("Hermes external memory provider must remain disabled");
 }
 if (!/^model:\n  default: gpt-5\.4-mini-2026-03-17\n  provider: openai-api\n  base_url: ""\n  api_mode: codex_responses$/m.test(config)) {
   throw new Error("Hermes model pin changed unexpectedly");

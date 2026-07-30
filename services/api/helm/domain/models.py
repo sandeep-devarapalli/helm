@@ -59,6 +59,12 @@ class ToolProvenanceStatus(StrEnum):
     CONFLICTING = "conflicting"
 
 
+class MemoryProposalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class Workspace(Base):
     __tablename__ = "workspaces"
     __table_args__ = (
@@ -229,6 +235,10 @@ class AgentRun(Base):
             "or length(tool_provenance_reason) between 1 and 120",
             name="tool_provenance_reason_length",
         ),
+        CheckConstraint(
+            "length(approved_memory_snapshot_hash) = 64",
+            name="approved_memory_snapshot_hash_length",
+        ),
         Index(
             "ix_agent_runs_workspace_conversation_created_id",
             "workspace_id",
@@ -290,6 +300,18 @@ class AgentRun(Base):
     tool_provenance_reason: Mapped[str | None] = mapped_column(Text)
     tool_provenance_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
+    )
+    approved_memory_snapshot: Mapped[list[dict[str, object]]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    approved_memory_snapshot_hash: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        server_default="4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     )
 
 
@@ -375,6 +397,192 @@ class RunToolProvenance(Base):
         nullable=False,
     )
     result: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=func.now(),
+    )
+
+
+class MemoryChangeProposal(Base):
+    __tablename__ = "memory_change_proposals"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id"),
+        UniqueConstraint("workspace_id", "idempotency_key"),
+        ForeignKeyConstraint(
+            ("workspace_id", "source_run_id"),
+            ("agent_runs.workspace_id", "agent_runs.id"),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "operating_context in ('individual_self_directed', 'institutional_proprietary')",
+            name="operating_context_allowed",
+        ),
+        CheckConstraint(
+            "(preference_key = 'communication.response_detail' "
+            "and proposed_value in ('concise', 'balanced', 'detailed')) "
+            "or (preference_key = 'research.presentation' "
+            "and proposed_value in ('narrative', 'bullets', 'table'))",
+            name="preference_allowed",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'approved', 'rejected')",
+            name="status_allowed",
+        ),
+        CheckConstraint(
+            "length(idempotency_key) between 1 and 128",
+            name="idempotency_key_length",
+        ),
+        CheckConstraint("length(request_hash) = 64", name="request_hash_length"),
+        CheckConstraint("proposer_ref = 'local_user'", name="proposer_ref_allowed"),
+        CheckConstraint(
+            "reviewer_ref is null or reviewer_ref = 'local_user'",
+            name="reviewer_ref_allowed",
+        ),
+        CheckConstraint(
+            "(status = 'pending' and reviewer_ref is null and decided_at is null "
+            "and decision_rationale is null) or "
+            "(status in ('approved', 'rejected') and reviewer_ref is not null "
+            "and decided_at is not null)",
+            name="decision_shape",
+        ),
+        CheckConstraint(
+            "decision_rationale is null "
+            "or length(decision_rationale) between 1 and 1000",
+            name="decision_rationale_length",
+        ),
+        Index(
+            "ix_memory_change_proposals_workspace_created_id",
+            "workspace_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    operating_context: Mapped[str] = mapped_column(Text, nullable=False)
+    preference_key: Mapped[str] = mapped_column(Text, nullable=False)
+    proposed_value: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
+    proposer_ref: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="local_user",
+        server_default="local_user",
+    )
+    reviewer_ref: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default=MemoryProposalStatus.PENDING.value,
+        server_default=MemoryProposalStatus.PENDING.value,
+    )
+    source_run_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    request_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    decision_rationale: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=func.now(),
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkspaceSoftPreference(Base):
+    __tablename__ = "workspace_soft_preferences"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("workspace_id", "source_proposal_id"),
+            ("memory_change_proposals.workspace_id", "memory_change_proposals.id"),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "operating_context in ('individual_self_directed', 'institutional_proprietary')",
+            name="operating_context_allowed",
+        ),
+        CheckConstraint(
+            "(preference_key = 'communication.response_detail' "
+            "and value in ('concise', 'balanced', 'detailed')) "
+            "or (preference_key = 'research.presentation' "
+            "and value in ('narrative', 'bullets', 'table'))",
+            name="preference_allowed",
+        ),
+        CheckConstraint("revision > 0", name="revision_positive"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    preference_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    operating_context: Mapped[str] = mapped_column(Text, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    source_proposal_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=func.now(),
+    )
+
+
+class MemoryProposalEvent(Base):
+    __tablename__ = "memory_proposal_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("workspace_id", "proposal_id"),
+            ("memory_change_proposals.workspace_id", "memory_change_proposals.id"),
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("workspace_id", "proposal_id", "sequence_number"),
+        CheckConstraint("sequence_number in (0, 1)", name="sequence_allowed"),
+        CheckConstraint(
+            "(sequence_number = 0 and event_type = 'proposed') or "
+            "(sequence_number = 1 and event_type in ('approved', 'rejected'))",
+            name="event_shape",
+        ),
+        CheckConstraint("actor_ref = 'local_user'", name="actor_ref_allowed"),
+        CheckConstraint(
+            "operating_context in ('individual_self_directed', 'institutional_proprietary')",
+            name="operating_context_allowed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        Identity(),
+        primary_key=True,
+    )
+    workspace_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    proposal_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_ref: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="local_user",
+        server_default="local_user",
+    )
+    operating_context: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

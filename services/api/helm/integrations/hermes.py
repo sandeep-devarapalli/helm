@@ -26,6 +26,7 @@ REQUIRED_ENDPOINTS = {
 }
 MAX_SESSION_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_SESSION_MESSAGES = 10_000
+MAX_RUN_INSTRUCTIONS_BYTES = 4096
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,17 @@ class HermesClient:
         session_id: str,
         session_key: str,
         history: list[dict[str, str]],
+        instructions: str | None = None,
     ) -> str:
+        if instructions is not None:
+            if not isinstance(instructions, str) or not instructions.strip():
+                raise HermesRunRejected("Hermes run instructions are invalid")
+            try:
+                instruction_bytes = instructions.encode("utf-8")
+            except UnicodeEncodeError as error:
+                raise HermesRunRejected("Hermes run instructions are invalid") from error
+            if len(instruction_bytes) > MAX_RUN_INSTRUCTIONS_BYTES:
+                raise HermesRunRejected("Hermes run instructions are invalid")
         async with httpx.AsyncClient(
             base_url=self.base_url,
             headers=self.headers,
@@ -103,14 +114,17 @@ class HermesClient:
             ):
                 raise HermesRunRejected("Hermes Runs API is not compatible")
             try:
+                payload: dict[str, object] = {
+                    "input": content,
+                    "session_id": session_id,
+                    "conversation_history": history,
+                }
+                if instructions is not None:
+                    payload["instructions"] = instructions
                 response = await client.post(
                     "/v1/runs",
                     headers={"X-Hermes-Session-Key": session_key},
-                    json={
-                        "input": content,
-                        "session_id": session_id,
-                        "conversation_history": history,
-                    },
+                    json=payload,
                 )
             except httpx.HTTPError as error:
                 raise HermesSubmissionUncertain(

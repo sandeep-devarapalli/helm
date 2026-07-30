@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for path in LICENSE README.md AGENTS.md CONTRIBUTING.md SECURITY.md THIRD_PARTY_NOTICES.md docs/brand/design.md runtime/hermes.lock runtime/vibe.lock; do
+          for path in LICENSE README.md AGENTS.md CONTRIBUTING.md SECURITY.md THIRD_PARTY_NOTICES.md docs/brand/design.md runtime/hermes.lock runtime/hermes.compatibility.json runtime/vibe.lock; do
             test -f "$path" || { echo "Missing required file: $path"; exit 1; }
           done
 

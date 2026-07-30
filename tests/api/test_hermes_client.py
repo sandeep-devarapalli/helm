@@ -148,6 +148,70 @@ def test_malformed_capabilities_fail_before_submission() -> None:
     assert calls == 1
 
 
+def test_run_instructions_use_ephemeral_gateway_field() -> None:
+    submitted: dict[str, object] = {}
+    instructions = "é" * 2048
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "hermes.api_server.capabilities",
+                    "platform": "hermes-agent",
+                    "features": {
+                        "approval_events": True,
+                        "run_submission": True,
+                        "run_status": True,
+                        "run_events_sse": True,
+                        "run_stop": True,
+                        "session_resources": True,
+                    },
+                    "endpoints": {
+                        "runs": {"method": "POST", "path": "/v1/runs"},
+                        "run_status": {
+                            "method": "GET",
+                            "path": "/v1/runs/{run_id}",
+                        },
+                        "run_events": {
+                            "method": "GET",
+                            "path": "/v1/runs/{run_id}/events",
+                        },
+                        "run_stop": {
+                            "method": "POST",
+                            "path": "/v1/runs/{run_id}/stop",
+                        },
+                        "session_messages": {
+                            "method": "GET",
+                            "path": "/api/sessions/{session_id}/messages",
+                        },
+                    },
+                },
+            )
+        submitted.update(json.loads(request.content))
+        return httpx.Response(
+            202,
+            json={"run_id": f"run_{'a' * 32}", "status": "started"},
+        )
+
+    async def exercise() -> None:
+        client = HermesClient(
+            "http://hermes:8642",
+            "test-key",
+            httpx.MockTransport(handler),
+        )
+        await client.submit_run(
+            "Resolve AAPL",
+            "session",
+            "workspace",
+            [],
+            instructions,
+        )
+
+    asyncio.run(exercise())
+    assert submitted["instructions"] == instructions
+
+
 def test_invalid_run_id_is_rejected_without_network_call() -> None:
     client = HermesClient(
         "http://hermes:8642",
@@ -158,6 +222,38 @@ def test_invalid_run_id_is_rejected_without_network_call() -> None:
     async def exercise() -> None:
         with pytest.raises(HermesError, match="run ID"):
             await client.status("../run")
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "instructions",
+    [
+        "   ",
+        "x" * 4097,
+        "é" * 2049,
+        "\ud800",
+        7,
+    ],
+)
+def test_invalid_run_instructions_are_rejected_without_network_call(
+    instructions: object,
+) -> None:
+    client = HermesClient(
+        "http://hermes:8642",
+        "test-key",
+        httpx.MockTransport(lambda request: pytest.fail(str(request.url))),
+    )
+
+    async def exercise() -> None:
+        with pytest.raises(HermesRunRejected, match="instructions"):
+            await client.submit_run(
+                "Hello",
+                "session",
+                "workspace",
+                [],
+                instructions,  # type: ignore[arg-type]
+            )
 
     asyncio.run(exercise())
 

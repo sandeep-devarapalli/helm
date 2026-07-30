@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "runtime_release": "v2026.7.7.2",
+  "runtime_commit": "9de9c25f620ff7f1ce0fd5457d596052d5159596",
+  "verified_at": "2026-07-30",
+  "result": "m2-memory-approvals",
+  "contracts": {
+    "run_instructions": {
+      "request_field": "instructions",
+      "runtime_field": "ephemeral_system_prompt",
+      "lifetime": "current-run-only",
+      "request_mapping_source": "https://github.com/NousResearch/hermes-agent/blob/v2026.7.7.2/gateway/platforms/api_server.py#L4185-L4203",
+      "prompt_assembly_source": "https://github.com/NousResearch/hermes-agent/blob/v2026.7.7.2/agent/conversation_loop.py#L832-L851",
+      "persistent_prompt_exclusion_source": "https://github.com/NousResearch/hermes-agent/blob/v2026.7.7.2/agent/system_prompt.py#L404-L410"
+    },
+    "memory": {
+      "memory_enabled": false,
+      "user_profile_enabled": false,
+      "provider": "",
+      "configuration_source": "https://github.com/NousResearch/hermes-agent/blob/v2026.7.7.2/website/docs/user-guide/features/memory.md#L209-L246"
+    }
+  }
+}

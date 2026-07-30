@@ -54,7 +54,9 @@ class FakeHermes:
         self.snapshot = status or {"status": "running"}
         self.stop_error = stop_error
         self.transcripts = transcripts
-        self.submissions: list[tuple[str, str, str, list[dict[str, str]]]] = []
+        self.submissions: list[
+            tuple[str, str, str, list[dict[str, str]], str | None]
+        ] = []
         self.stop_attempts: list[str] = []
         self.stopped: list[str] = []
         self.session_message_calls = 0
@@ -65,8 +67,11 @@ class FakeHermes:
         session_id: str,
         session_key: str,
         history: list[dict[str, str]],
+        instructions: str | None = None,
     ) -> str:
-        self.submissions.append((content, session_id, session_key, history))
+        self.submissions.append(
+            (content, session_id, session_key, history, instructions)
+        )
         if self.submit_error is not None:
             raise self.submit_error
         return HERMES_RUN_ID
@@ -254,13 +259,14 @@ def test_run_projects_terminal_output(api_context) -> None:
             assert events[2].payload == {"available": True}
 
     asyncio.run(inspect())
-    content, session_id, session_key, history = hermes.submissions[0]
+    content, session_id, session_key, history, instructions = hermes.submissions[0]
     assert content == "Resolve AAPL"
     assert session_id == (
         f"helm:{api_context.workspace_a}:conversation:{conversation_id}"
     )
     assert session_key == f"helm:workspace:{api_context.workspace_a}"
     assert history == []
+    assert instructions is None
 
 
 def test_terminal_run_reconciles_tool_provenance_idempotently(api_context) -> None:

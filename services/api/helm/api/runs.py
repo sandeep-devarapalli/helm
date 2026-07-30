@@ -23,6 +23,11 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from helm.api.memory import (
+    approved_memory_snapshot,
+    memory_snapshot_hash,
+    render_memory_instructions,
+)
 from helm.database import get_session
 from helm.domain.models import (
     AgentRun,
@@ -142,6 +147,8 @@ class RunResponse(BaseModel):
 class RunDetailResponse(RunResponse):
     started_at: datetime | None
     finished_at: datetime | None
+    approved_memory_snapshot: list[dict[str, object]]
+    approved_memory_snapshot_hash: str
     projection_gap: bool
     tool_provenance_status: str
     tool_provenance_reason: str | None
@@ -1129,6 +1136,8 @@ async def get_run(
         **RunResponse.model_validate(run).model_dump(),
         started_at=run.started_at,
         finished_at=run.finished_at,
+        approved_memory_snapshot=run.approved_memory_snapshot,
+        approved_memory_snapshot_hash=run.approved_memory_snapshot_hash,
         projection_gap=await has_projection_gap(session, run),
         tool_provenance_status=run.tool_provenance_status,
         tool_provenance_reason=run.tool_provenance_reason,
@@ -1283,6 +1292,9 @@ async def create_run(
     )
     if conversation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="conversation not found")
+    memory_snapshot = await approved_memory_snapshot(session, workspace_id)
+    approved_snapshot_hash = memory_snapshot_hash(memory_snapshot)
+    memory_instructions = render_memory_instructions(memory_snapshot)
     history = [
         {"role": message.role, "content": message.content}
         for message in (
@@ -1316,6 +1328,8 @@ async def create_run(
         submission_attempted_at=utc_now(),
         hermes_session_id=hermes_session_id,
         hermes_message_cursor=hermes_message_cursor,
+        approved_memory_snapshot=memory_snapshot,
+        approved_memory_snapshot_hash=approved_snapshot_hash,
     )
     session.add(run)
     try:
@@ -1344,6 +1358,7 @@ async def create_run(
             hermes_session_id,
             hermes_session_key,
             history,
+            memory_instructions,
         )
     except HermesRunRejected:
         await mark_rejected(

@@ -96,7 +96,7 @@ gates. Current verified status is:
 | --- | --- | --- |
 | M0 | Closure verification | Foundation code and main CI are green. [Issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) must record one clean-clone startup and exact runtime tool-allowlist proof before M0 closes. |
 | M1 | External evidence pending | [PR #6](https://github.com/sandeep-devarapalli/helm/pull/6) added the Dubai decision packet. [Issue #16](https://github.com/sandeep-devarapalli/helm/issues/16) tracks qualified entity, perimeter, tax, broker, data, governance, and market-access decisions. |
-| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. [PR #18](https://github.com/sandeep-devarapalli/helm/pull/18) added persisted resumable SSE. [Issue #12](https://github.com/sandeep-devarapalli/helm/issues/12) adds bounded terminal tool provenance; issues [#13](https://github.com/sandeep-devarapalli/helm/issues/13) and [#14](https://github.com/sandeep-devarapalli/helm/issues/14) remain for memory approvals and Workbench activation. |
+| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. [PR #18](https://github.com/sandeep-devarapalli/helm/pull/18) added persisted resumable SSE, and [PR #19](https://github.com/sandeep-devarapalli/helm/pull/19) added bounded terminal tool provenance. [Issue #13](https://github.com/sandeep-devarapalli/helm/issues/13) is the current approval-gated soft-preference slice; [issue #14](https://github.com/sandeep-devarapalli/helm/issues/14) remains for Workbench activation. |
 | M3–M10 | Planned | No implementation claim. Start only through focused issues after the required earlier domain gates. |
 | M11A–M12 | Gated or deferred | No live authority exists. Legal, broker, data, security, governance, and market-specific gates remain unsatisfied. |
 
@@ -327,10 +327,18 @@ cursor and records complete, partial, unavailable, or conflicting tool
 provenance. It does not store raw reasoning, reconstruct terminal assistant
 messages, or claim structured citations.
 
-The next engineering slice is
-[issue #13](https://github.com/sandeep-devarapalli/helm/issues/13):
-stage Hermes memory changes for explicit approval. Workbench activation remains
-separate in [issue #14](https://github.com/sandeep-devarapalli/helm/issues/14).
+Stage 2E implements
+[issue #13](https://github.com/sandeep-devarapalli/helm/issues/13) as
+workspace-scoped, approval-gated soft preferences. Pending and rejected
+proposals are inert. Approval materializes only a narrow allowlist of
+presentation preferences, future runs persist the exact approved snapshot, and
+the canonical Postgres audit events reject updates and deletes. Evidence and
+arbitrary user prose never become Hermes instructions. Built-in and external
+Hermes memory providers remain disabled, and no memory value can represent
+credentials, roles, policy, mandates, risk controls, or execution authority.
+
+The next engineering slice is Workbench activation in
+[issue #14](https://github.com/sandeep-devarapalli/helm/issues/14).
 
 M0 closure evidence in
 [issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) and external

@@ -63,8 +63,9 @@ def api_context(tmp_path: Path) -> Iterator[ApiTestContext]:
             else:
                 await connection.execute(
                     text(
-                        "TRUNCATE run_tool_provenance, run_events, agent_runs, "
-                        "messages, conversations, workspaces "
+                        "TRUNCATE memory_proposal_events, workspace_soft_preferences, "
+                        "memory_change_proposals, run_tool_provenance, run_events, "
+                        "agent_runs, messages, conversations, workspaces "
                         "RESTART IDENTITY CASCADE"
                     )
                 )
