@@ -13,8 +13,10 @@ Stage 1 is a public foundation, not a trading release.
 - Workspace-scoped conversations can submit runs through Hermes's public Runs
   API and persist durable correlation, ordered lifecycle events, and terminal
   assistant messages.
-- Browser streaming, the functional composer, memory approvals, and complete
-  tool-result/citation reconciliation are not implemented.
+- Run and event reads expose explicit projection completeness, and helm-owned
+  SSE resumes from persisted event IDs without connecting browsers to Hermes.
+- Workbench activation, memory approvals, and complete tool-result/citation
+  reconciliation are not implemented.
 - Built-in Hermes memory is disabled until per-workspace instances and approval
   governance exist. Hermes and Vibe versions remain pinned.
 - The Hermes profile pins `gpt-5.4-mini-2026-03-17` through the upstream `openai-api` provider.

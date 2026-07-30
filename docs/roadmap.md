@@ -96,7 +96,7 @@ gates. Current verified status is:
 | --- | --- | --- |
 | M0 | Closure verification | Foundation code and main CI are green. [Issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) must record one clean-clone startup and exact runtime tool-allowlist proof before M0 closes. |
 | M1 | External evidence pending | [PR #6](https://github.com/sandeep-devarapalli/helm/pull/6) added the Dubai decision packet. [Issue #16](https://github.com/sandeep-devarapalli/helm/issues/16) tracks qualified entity, perimeter, tax, broker, data, governance, and market-access decisions. |
-| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. Issues [#11](https://github.com/sandeep-devarapalli/helm/issues/11)–[#14](https://github.com/sandeep-devarapalli/helm/issues/14) cover SSE, provenance reconciliation, memory approvals, and Workbench activation. |
+| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. [Issue #11](https://github.com/sandeep-devarapalli/helm/issues/11) adds persisted resumable SSE; issues [#12](https://github.com/sandeep-devarapalli/helm/issues/12)–[#14](https://github.com/sandeep-devarapalli/helm/issues/14) cover provenance reconciliation, memory approvals, and Workbench activation. |
 | M3–M10 | Planned | No implementation claim. Start only through focused issues after the required earlier domain gates. |
 | M11A–M12 | Gated or deferred | No live authority exists. Legal, broker, data, security, governance, and market-specific gates remain unsatisfied. |
 
@@ -315,21 +315,22 @@ Commodity ETFs do not satisfy this gate for futures.
 
 Stage 2A established the persistence spine. Stage 2B submits one run through
 the pinned Hermes public Runs API, stores upstream correlation, and projects
-one backend-owned event stream into ordered `RunEvent` records.
+one backend-owned event stream into ordered `RunEvent` records. Stage 2C
+exposes workspace-scoped run and event reads plus resumable helm SSE over those
+persisted records.
 
 The pinned Hermes stream has no replay cursor and exposes limited tool
 lifecycle metadata rather than complete arguments, results, or citations.
 Interrupted projection remains explicitly incomplete and is never retried.
-Session-message reconciliation, resumable helm SSE, memory approvals, and
-Workbench activation remain separate focused PRs.
+Session-message reconciliation, memory approvals, and Workbench activation
+remain separate focused PRs.
 
 The next engineering slice is
-[issue #11](https://github.com/sandeep-devarapalli/helm/issues/11): expose
-workspace-scoped run and cursor-based event reads, then resumable SSE over
-persisted `RunEvent` rows. It must support `Last-Event-ID` without gaps or
-duplicates, close only after all terminal rows are delivered, and keep the
-browser disconnected from Hermes. Composer activation, memory approvals, and
-session-message reconciliation stay outside that PR.
+[issue #12](https://github.com/sandeep-devarapalli/helm/issues/12):
+reconcile terminal Hermes session messages for bounded tool-call and result
+provenance. It must preserve explicit incomplete or conflicting states and
+must not store raw reasoning or claim structured citations that Hermes does
+not provide.
 
 M0 closure evidence in
 [issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) and external
