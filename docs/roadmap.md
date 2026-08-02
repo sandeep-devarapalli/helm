@@ -344,8 +344,12 @@ public messages and bounded latest-run refresh state remain workspace-scoped.
 Stage 2F-B renders that state read-only for one explicit workspace context.
 It does not enumerate or guess workspaces, and it keeps partial history,
 projection gaps, failed runs, and approval-blocked runs visibly weak. The
-composer remains disabled. The next slice enables submission and resumable SSE
-without connecting the browser directly to Hermes.
+composer remains disabled. Stage 2F-C enables one controlled submission for an
+existing conversation and consumes helm-owned resumable SSE without connecting
+the browser directly to Hermes. Replayed event IDs are deduplicated, gaps fail
+closed, streamed text remains provisional, and terminal events reload canonical
+Postgres state. Conversation creation and the complete reconnect browser-test
+matrix remain open in issue #14.
 
 M0 closure evidence in
 [issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) and external

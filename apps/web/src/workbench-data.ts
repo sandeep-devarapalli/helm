@@ -22,6 +22,12 @@ export type RunRefreshState = {
   tool_provenance_status: string;
 };
 
+export type RunCreateResponse = {
+  id: string;
+  status: string;
+  event_stream_complete: boolean;
+};
+
 export type ConversationView =
   | { status: "loading" }
   | { status: "context-required" }
@@ -72,4 +78,21 @@ export async function loadConversationView(
     run: latestRun.run,
     partialHistory: messagePage.next_cursor !== null,
   };
+}
+
+export async function submitConversationMessage(
+  workspaceId: string,
+  conversationId: string,
+  content: string,
+  fetcher: FetchLike = fetch,
+): Promise<RunCreateResponse> {
+  const response = await fetcher(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/conversations/${encodeURIComponent(conversationId)}/runs`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: content.trim() }),
+    },
+  );
+  return responseJson<RunCreateResponse>(response);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Activity,
   Bot,
@@ -15,11 +15,38 @@ import {
 import { Badge, Button, Card, ChatBubble, MetricTile } from "@helm/ui";
 import {
   loadConversationView,
+  submitConversationMessage,
   type ConversationView,
+  type RunCreateResponse,
   type RunRefreshState,
 } from "./workbench-data";
+import {
+  isRunActive,
+  subscribeToRunEvents,
+  type PublicRunEvent,
+} from "./workbench-stream";
 
 type HealthState = "checking" | "ready" | "unavailable";
+
+export type RunStreamState = {
+  runId: string | null;
+  phase: "idle" | "connecting" | "live" | "reconnecting" | "failed";
+  delta: string;
+  error: string | null;
+};
+
+const idleRunStream: RunStreamState = {
+  runId: null,
+  phase: "idle",
+  delta: "",
+  error: null,
+};
+
+export function openedRunStream(state: RunStreamState, runId: string): RunStreamState {
+  return state.runId === runId
+    ? { ...state, phase: "live", error: null }
+    : { runId, phase: "live", delta: "", error: null };
+}
 
 const workspaceIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -29,30 +56,65 @@ const watchlist = [
   { symbol: "AMD", venue: "NASDAQ", price: "$156.74", change: "-0.31%" },
 ];
 
-function useConversationView(workspaceId: string | null): ConversationView {
+function useConversationView(workspaceId: string | null) {
   const [loadedResult, setLoadedResult] = useState<{
     workspaceId: string;
     view: ConversationView;
   } | null>(null);
+  const requestGeneration = useRef(0);
+  const latestRefresh = useRef<Promise<ConversationView> | null>(null);
   const workspaceIsValid = workspaceId !== null && workspaceIdPattern.test(workspaceId);
+
+  const refresh = useCallback((): Promise<ConversationView> => {
+    if (!workspaceIsValid || workspaceId === null) {
+      return Promise.resolve({ status: "invalid-context" });
+    }
+    const generation = ++requestGeneration.current;
+    const request = loadConversationView(workspaceId)
+      .catch(() => ({ status: "unavailable" } as const))
+      .then((view): ConversationView | Promise<ConversationView> => {
+        if (generation !== requestGeneration.current) {
+          const newerRequest = latestRefresh.current;
+          return newerRequest && newerRequest !== request ? newerRequest : view;
+        }
+        setLoadedResult({ workspaceId, view });
+        return view;
+      });
+    latestRefresh.current = request;
+    return request;
+  }, [workspaceId, workspaceIsValid]);
+  const updateRun = useCallback((run: RunRefreshState) => {
+    setLoadedResult((result) => {
+      if (result?.workspaceId !== workspaceId || result.view.status !== "ready") return result;
+      return { ...result, view: { ...result.view, run } };
+    });
+  }, [workspaceId]);
 
   useEffect(() => {
     if (!workspaceIsValid || workspaceId === null) return;
     const controller = new AbortController();
+    const generation = ++requestGeneration.current;
     loadConversationView(workspaceId, fetch, controller.signal)
-      .then((view) => setLoadedResult({ workspaceId, view }))
+      .then((view) => {
+        if (generation === requestGeneration.current) setLoadedResult({ workspaceId, view });
+      })
       .catch((error: unknown) => {
-        if (!(error instanceof Error && error.name === "AbortError")) {
+        if (
+          generation === requestGeneration.current
+          && !(error instanceof Error && error.name === "AbortError")
+        ) {
           setLoadedResult({ workspaceId, view: { status: "unavailable" } });
         }
       });
     return () => controller.abort();
   }, [workspaceId, workspaceIsValid]);
 
-  if (workspaceId === null) return { status: "context-required" };
-  if (!workspaceIsValid) return { status: "invalid-context" };
-  if (loadedResult?.workspaceId !== workspaceId) return { status: "loading" };
-  return loadedResult.view;
+  let view: ConversationView;
+  if (workspaceId === null) view = { status: "context-required" };
+  else if (!workspaceIsValid) view = { status: "invalid-context" };
+  else if (loadedResult?.workspaceId !== workspaceId) view = { status: "loading" };
+  else view = loadedResult.view;
+  return { view, refresh, updateRun };
 }
 
 function useApiHealth() {
@@ -187,6 +249,7 @@ function timestamp(value: string): string {
 function RunBadge({ run }: { run: RunRefreshState | null }) {
   if (run === null) return <Badge>No run</Badge>;
   if (run.approval_blocked) return <Badge tone="warning" dot>Approval blocked</Badge>;
+  if (run.status === "indeterminate") return <Badge tone="warning" dot>Outcome uncertain</Badge>;
   if (run.status === "failed") return <Badge tone="danger" dot>Failed</Badge>;
   if (run.status === "succeeded" && run.event_stream_complete && !run.projection_gap) {
     return <Badge tone="success" dot>Succeeded</Badge>;
@@ -199,6 +262,14 @@ function RunBadge({ run }: { run: RunRefreshState | null }) {
 
 function runSummaries(run: RunRefreshState): string[] {
   const summaries: string[] = [];
+  if (isRunActive(run.status)) {
+    summaries.push("Hermes is active. Streamed text is provisional until helm persists the terminal transcript.");
+  }
+  if (run.status === "indeterminate") {
+    summaries.push(
+      "The submission outcome is uncertain. Replacement runs remain blocked until the state is resolved.",
+    );
+  }
   if (run.approval_blocked) {
     summaries.push(
       "Hermes requested an unsupported approval. helm stopped the run; nothing was executed.",
@@ -221,7 +292,7 @@ function runSummaries(run: RunRefreshState): string[] {
   return summaries;
 }
 
-function ThreadState({ view }: { view: ConversationView }) {
+function ThreadState({ view, stream }: { view: ConversationView; stream: RunStreamState }) {
   if (view.status === "loading") {
     return <div className="thread-state" role="status"><strong>Loading persisted conversation</strong><span>Reading canonical helm state.</span></div>;
   }
@@ -237,12 +308,13 @@ function ThreadState({ view }: { view: ConversationView }) {
   if (view.status === "empty") {
     return <div className="thread-state"><strong>No persisted conversation</strong><span>This workspace has no conversation to display. Sending remains disabled.</span></div>;
   }
+  const streamIsActive = stream.runId === view.run?.id && isRunActive(view.run?.status);
 
   return (
     <>
       <div className="conversation-meta">
         <div><span className="section-label">Persisted conversation</span><strong>{view.conversation.title ?? "Untitled conversation"}</strong></div>
-        <div className="conversation-badges"><Badge tone="info">Read only</Badge>{view.partialHistory ? <Badge tone="warning">Partial history</Badge> : null}</div>
+        <div className="conversation-badges"><Badge tone="info">Persisted</Badge>{view.partialHistory ? <Badge tone="warning">Partial history</Badge> : null}</div>
       </div>
       {view.messages.length === 0 ? (
         <div className="thread-state"><strong>No persisted messages</strong><span>The conversation exists, but its public transcript is empty.</span></div>
@@ -251,6 +323,18 @@ function ThreadState({ view }: { view: ConversationView }) {
           <p className="message-content">{message.content}</p>
         </ChatBubble>
       ))}
+      {streamIsActive && stream.delta ? (
+        <div className="live-projection" aria-live="polite">
+          <span className="section-label">Live projection · provisional</span>
+          <ChatBubble role="agent"><p className="message-content">{stream.delta}</p></ChatBubble>
+        </div>
+      ) : null}
+      {streamIsActive && stream.error ? (
+        <div className="thread-state danger" role="alert">
+          <strong>Live projection stopped</strong>
+          <span>{stream.error} The canonical persisted transcript remains authoritative.</span>
+        </div>
+      ) : null}
       <Card tone="ghost" padding="md">
         <div className="run-summary">
           <div><span className="section-label">Latest Hermes run</span><RunBadge run={view.run} /></div>
@@ -269,8 +353,52 @@ function ThreadState({ view }: { view: ConversationView }) {
   );
 }
 
-export function HermesPanel({ health, view }: { health: HealthState; view: ConversationView }) {
+export function HermesPanel({
+  health,
+  view,
+  stream = idleRunStream,
+  submitting = false,
+  submissionError = null,
+  onSubmit,
+}: {
+  health: HealthState;
+  view: ConversationView;
+  stream?: RunStreamState;
+  submitting?: boolean;
+  submissionError?: string | null;
+  onSubmit?: (content: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState("");
   const hasConversation = view.status === "ready";
+  const runBlocksSubmission = hasConversation && (
+    isRunActive(view.run?.status)
+    || view.run?.status === "indeterminate"
+    || view.run?.approval_blocked === true
+    || view.run?.projection_gap === true
+  );
+  const canCompose = Boolean(onSubmit) && health === "ready" && hasConversation && !runBlocksSubmission && !submitting;
+  const activityLabel = submitting
+    ? "Submitting to helm"
+    : stream.phase === "reconnecting"
+      ? "Recovering persisted events"
+      : stream.phase === "connecting" || stream.phase === "live"
+        ? "Hermes run active"
+        : hasConversation
+          ? "Persisted conversation"
+          : "No conversation session";
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const content = draft.trim();
+    if (!canCompose || !content || !onSubmit) return;
+    try {
+      await onSubmit(content);
+      setDraft("");
+    } catch {
+      // The parent exposes the bounded helm API failure without clearing the draft.
+    }
+  }
+
   return (
     <aside className="hermes-panel">
       <header className="panel-header">
@@ -282,17 +410,31 @@ export function HermesPanel({ health, view }: { health: HealthState; view: Conve
         aria-busy={view.status === "loading"}
         aria-live="polite"
       >
-        <ThreadState view={view} />
+        <ThreadState view={view} stream={stream} />
       </div>
-      <div className="composer">
+      <form className="composer" onSubmit={handleSubmit}>
+        {submissionError ? <div className="composer-error" role="alert">{submissionError}</div> : null}
         <div className="composer-box">
-          <textarea aria-label="Message Hermes" disabled placeholder="Read-only transcript · sending activates in the next slice" rows={2} />
+          <textarea
+            aria-label="Message Hermes"
+            disabled={!canCompose}
+            maxLength={20_000}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={canCompose ? "Ask Hermes to research or explain…" : "Message submission is unavailable"}
+            rows={2}
+            value={draft}
+          />
           <div>
-            <span><Database size={13} />{hasConversation ? "Persisted conversation" : "No conversation session"}</span>
-            <Button size="sm" disabled icon={<Activity size={14} />}>Send</Button>
+            <span><Database size={13} />{activityLabel}</span>
+            <Button
+              size="sm"
+              disabled={!canCompose || draft.trim().length === 0}
+              loading={submitting}
+              icon={<Activity size={14} />}
+            >Send</Button>
           </div>
         </div>
-      </div>
+      </form>
     </aside>
   );
 }
@@ -302,13 +444,97 @@ export function App() {
   const workspaceId = typeof window === "undefined"
     ? null
     : new URLSearchParams(window.location.search).get("workspace");
-  const conversationView = useConversationView(workspaceId);
+  const { view: conversationView, refresh, updateRun } = useConversationView(workspaceId);
+  const [stream, setStream] = useState<RunStreamState>(idleRunStream);
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const submitInFlight = useRef(false);
+  const conversationId = conversationView.status === "ready" ? conversationView.conversation.id : null;
+  const runId = conversationView.status === "ready" ? conversationView.run?.id ?? null : null;
+  const runStatus = conversationView.status === "ready" ? conversationView.run?.status : undefined;
+
+  useEffect(() => {
+    if (!workspaceId || !conversationId || !runId || !isRunActive(runStatus)) return;
+    return subscribeToRunEvents(workspaceId, conversationId, runId, {
+      onOpen: () => setStream((state) => openedRunStream(state, runId)),
+      onEvent: (event: PublicRunEvent) => setStream((state) => {
+        const currentDelta = state.runId === runId ? state.delta : "";
+        return {
+          ...state,
+          runId,
+          phase: "live",
+          delta: event.event_type === "message.delta" && typeof event.payload.delta === "string"
+            ? currentDelta + event.payload.delta
+            : currentDelta,
+        };
+      }),
+      onTerminal: () => { void refresh(); },
+      onReconnect: () => {
+        setStream((state) => ({ ...state, phase: "reconnecting" }));
+        void refresh();
+      },
+      onFailure: (error) => {
+        setStream((state) => ({ ...state, phase: "failed", error }));
+        void refresh();
+      },
+    });
+  }, [conversationId, refresh, runId, runStatus, workspaceId]);
+
+  const submit = useCallback(async (content: string) => {
+    if (!workspaceId || !conversationId) throw new Error("conversation context unavailable");
+    if (submitInFlight.current) throw new Error("message submission already in progress");
+    submitInFlight.current = true;
+    setSubmitting(true);
+    setSubmissionError(null);
+    try {
+      const run = await submitConversationMessage(workspaceId, conversationId, content);
+      updateRun(runRefreshFromCreate(run));
+      void refresh();
+    } catch (error) {
+      setSubmissionError(
+        error instanceof Error
+          ? "helm could not submit this message. The draft was preserved; nothing was retried."
+          : "Message submission failed before a run could be confirmed.",
+      );
+      await refresh();
+      throw error;
+    } finally {
+      submitInFlight.current = false;
+      setSubmitting(false);
+    }
+  }, [conversationId, refresh, updateRun, workspaceId]);
+
+  const visibleStream = runId && isRunActive(runStatus)
+    ? stream.runId === runId
+      ? stream
+      : { ...idleRunStream, runId, phase: "connecting" as const }
+    : idleRunStream;
   return (
     <div className="app-shell">
       <Sidebar />
       <MarketWorkspace />
-      <HermesPanel health={health} view={conversationView} />
+      <HermesPanel
+        key={conversationId ?? workspaceId ?? "no-workspace"}
+        health={health}
+        view={conversationView}
+        stream={visibleStream}
+        submitting={submitting}
+        submissionError={submissionError}
+        onSubmit={submit}
+      />
       <button className="search-shortcut" aria-label="Search"><Search size={15} /><span>Search</span><kbd>⌘K</kbd></button>
     </div>
   );
+}
+
+function runRefreshFromCreate(run: RunCreateResponse): RunRefreshState {
+  const indeterminate = run.status === "indeterminate";
+  return {
+    id: run.id,
+    status: run.status,
+    event_stream_complete: run.event_stream_complete,
+    projection_gap: indeterminate,
+    approval_blocked: false,
+    tool_provenance_status: indeterminate ? "unavailable" : "pending",
+  };
 }
