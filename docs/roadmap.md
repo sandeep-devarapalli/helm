@@ -96,7 +96,7 @@ gates. Current verified status is:
 | --- | --- | --- |
 | M0 | Closure verification | Foundation code and main CI are green. [Issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) must record one clean-clone startup and exact runtime tool-allowlist proof before M0 closes. |
 | M1 | External evidence pending | [PR #6](https://github.com/sandeep-devarapalli/helm/pull/6) added the Dubai decision packet. [Issue #16](https://github.com/sandeep-devarapalli/helm/issues/16) tracks qualified entity, perimeter, tax, broker, data, governance, and market-access decisions. |
-| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. [PR #18](https://github.com/sandeep-devarapalli/helm/pull/18) added persisted resumable SSE, and [PR #19](https://github.com/sandeep-devarapalli/helm/pull/19) added bounded terminal tool provenance. [Issue #13](https://github.com/sandeep-devarapalli/helm/issues/13) is the current approval-gated soft-preference slice; [issue #14](https://github.com/sandeep-devarapalli/helm/issues/14) remains for Workbench activation. |
+| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. [PR #18](https://github.com/sandeep-devarapalli/helm/pull/18) added persisted resumable SSE, [PR #19](https://github.com/sandeep-devarapalli/helm/pull/19) added bounded terminal tool provenance, and [PR #20](https://github.com/sandeep-devarapalli/helm/pull/20) added approval-gated soft preferences. [Issue #14](https://github.com/sandeep-devarapalli/helm/issues/14) remains the current Workbench-activation milestone. |
 | M3–M10 | Planned | No implementation claim. Start only through focused issues after the required earlier domain gates. |
 | M11A–M12 | Gated or deferred | No live authority exists. Legal, broker, data, security, governance, and market-specific gates remain unsatisfied. |
 
@@ -339,6 +339,10 @@ credentials, roles, policy, mandates, risk controls, or execution authority.
 
 The next engineering slice is Workbench activation in
 [issue #14](https://github.com/sandeep-devarapalli/helm/issues/14).
+Stage 2F-A supplies its refresh contract: chronological, cursor-paginated
+public messages and bounded latest-run refresh state remain workspace-scoped.
+The Workbench still renders fixtures; the next slice renders this persisted
+state read-only before enabling submission or SSE reconnection.
 
 M0 closure evidence in
 [issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) and external

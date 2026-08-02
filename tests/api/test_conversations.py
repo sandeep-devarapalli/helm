@@ -1,5 +1,6 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest
 from helm.domain.models import (
@@ -112,6 +113,200 @@ def test_invalid_conversation_cursor_is_rejected(api_context) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_messages_are_chronological_paginated_and_workspace_scoped(api_context) -> None:
+    conversation = api_context.client.post(
+        f"/workspaces/{api_context.workspace_a}/conversations",
+        json={"title": "Persisted transcript"},
+    ).json()
+    conversation_id = UUID(conversation["id"])
+
+    async def seed_messages() -> list[str]:
+        created_at = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+        user = Message(
+            workspace_id=api_context.workspace_a,
+            conversation_id=conversation_id,
+            role=MessageRole.USER.value,
+            content="Compare NVDA and AMD.",
+            created_at=created_at,
+        )
+        assistant = Message(
+            workspace_id=api_context.workspace_a,
+            conversation_id=conversation_id,
+            role=MessageRole.ASSISTANT.value,
+            content="I will gather evidence first.",
+            created_at=created_at,
+        )
+        follow_up = Message(
+            workspace_id=api_context.workspace_a,
+            conversation_id=conversation_id,
+            role=MessageRole.USER.value,
+            content="Show the evidence quality.",
+            created_at=created_at,
+        )
+        system = Message(
+            workspace_id=api_context.workspace_a,
+            conversation_id=conversation_id,
+            role=MessageRole.SYSTEM.value,
+            content="Internal instruction",
+            created_at=created_at,
+        )
+        tool = Message(
+            workspace_id=api_context.workspace_a,
+            conversation_id=conversation_id,
+            role=MessageRole.TOOL.value,
+            content="Internal tool result",
+            created_at=created_at,
+        )
+        async with api_context.session_factory() as session:
+            session.add_all([user, assistant, follow_up, system, tool])
+            await session.commit()
+        return [
+            str(message.id)
+            for message in sorted((user, assistant, follow_up), key=lambda item: item.id)
+        ]
+
+    expected_ids = asyncio.run(seed_messages())
+    first_response = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/{conversation['id']}/messages",
+        params={"limit": 2},
+    )
+    first_page = first_response.json()
+    second_response = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/{conversation['id']}/messages",
+        params={"limit": 2, "cursor": first_page["next_cursor"]},
+    )
+    second_page = second_response.json()
+    foreign_response = api_context.client.get(
+        f"/workspaces/{api_context.workspace_b}/conversations/{conversation['id']}/messages"
+    )
+
+    assert first_response.status_code == 200, first_response.text
+    assert second_response.status_code == 200, second_response.text
+    assert foreign_response.status_code == 404
+    assert first_page["next_cursor"] is not None
+    assert second_page["next_cursor"] is None
+    items = first_page["items"] + second_page["items"]
+    assert [item["id"] for item in items] == expected_ids
+    assert {item["role"] for item in items} == {
+        MessageRole.USER.value,
+        MessageRole.ASSISTANT.value,
+    }
+    assert {item["content"] for item in items}.isdisjoint(
+        {"Internal instruction", "Internal tool result"}
+    )
+
+
+def test_invalid_message_cursor_is_rejected(api_context) -> None:
+    conversation = api_context.client.post(
+        f"/workspaces/{api_context.workspace_a}/conversations",
+        json={"title": "Invalid transcript cursor"},
+    ).json()
+
+    response = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/{conversation['id']}/messages",
+        params={"cursor": "not-a-cursor"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_latest_run_supports_refresh_without_browser_state(api_context) -> None:
+    conversation = api_context.client.post(
+        f"/workspaces/{api_context.workspace_a}/conversations",
+        json={"title": "Refresh state"},
+    ).json()
+    conversation_id = UUID(conversation["id"])
+    latest_before_run = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/{conversation['id']}/runs/latest"
+    )
+
+    async def seed_runs() -> str:
+        created_at = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+        completed_id = uuid4()
+        active_id = uuid4()
+        if active_id > completed_id:
+            completed_id, active_id = active_id, completed_id
+        completed = AgentRun(
+            id=completed_id,
+            workspace_id=api_context.workspace_a,
+            conversation_id=conversation_id,
+            status=AgentRunStatus.SUCCEEDED.value,
+            created_at=created_at,
+            finished_at=created_at + timedelta(minutes=1),
+        )
+        active = AgentRun(
+            id=active_id,
+            workspace_id=api_context.workspace_a,
+            conversation_id=conversation_id,
+            status=AgentRunStatus.QUEUED.value,
+            created_at=created_at,
+        )
+        async with api_context.session_factory() as session:
+            session.add_all([completed, active])
+            await session.commit()
+        return str(active.id)
+
+    active_run_id = asyncio.run(seed_runs())
+    latest_response = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/{conversation['id']}/runs/latest"
+    )
+    foreign_response = api_context.client.get(
+        f"/workspaces/{api_context.workspace_b}/conversations/{conversation['id']}/runs/latest"
+    )
+    latest = latest_response.json()["run"]
+
+    assert latest_before_run.status_code == 200
+    assert latest_before_run.json() == {"run": None}
+    assert latest_response.status_code == 200, latest_response.text
+    assert foreign_response.status_code == 404
+    assert latest["id"] == active_run_id
+    assert latest["status"] == AgentRunStatus.QUEUED.value
+    assert latest["event_stream_complete"] is False
+    assert latest["projection_gap"] is False
+    assert latest["approval_blocked"] is False
+    assert latest["tool_provenance_complete"] is False
+    assert "approved_memory_snapshot" not in latest
+    assert "hermes_run_id" not in latest
+
+
+def test_latest_run_marks_approval_blocked(api_context) -> None:
+    conversation = api_context.client.post(
+        f"/workspaces/{api_context.workspace_a}/conversations",
+        json={"title": "Approval boundary"},
+    ).json()
+    conversation_id = UUID(conversation["id"])
+
+    async def seed_cancelled_run() -> None:
+        run = AgentRun(
+            workspace_id=api_context.workspace_a,
+            conversation_id=conversation_id,
+            status=AgentRunStatus.CANCELLED.value,
+            finished_at=utc_now(),
+        )
+        async with api_context.session_factory() as session:
+            session.add(run)
+            await session.flush()
+            session.add(
+                RunEvent(
+                    workspace_id=api_context.workspace_a,
+                    agent_run_id=run.id,
+                    sequence_number=0,
+                    event_type="approval.request",
+                    payload={"choices": ["once", "deny"]},
+                )
+            )
+            await session.commit()
+
+    asyncio.run(seed_cancelled_run())
+    response = api_context.client.get(
+        f"/workspaces/{api_context.workspace_a}/conversations/{conversation_id}/runs/latest"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["run"]["status"] == AgentRunStatus.CANCELLED.value
+    assert response.json()["run"]["approval_blocked"] is True
 
 
 def test_event_order_and_workspace_constraints(api_context) -> None:
