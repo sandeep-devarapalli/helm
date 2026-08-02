@@ -17,6 +17,9 @@ Stage 1 is a public foundation, not a trading release.
   SSE resumes from persisted event IDs without connecting browsers to Hermes.
 - Conversation reads expose chronological public messages and canonical latest-
   run state so future Workbench refresh recovery does not rely on browser state.
+- The Workbench can render the newest persisted conversation for an explicit
+  `?workspace=<uuid>` context. It does not enumerate or guess across isolated
+  workspaces, and the composer remains disabled.
 - Terminal Hermes sessions reconcile bounded, allowlisted tool provenance with
   explicit complete, partial, unavailable, or conflicting state. Structured
   citation claims remain disabled.
@@ -82,6 +85,13 @@ Open the Workbench:
 
 ```zsh
 open http://localhost:5173
+```
+
+To render a persisted conversation before authenticated workspace selection
+ships, pass one explicit workspace context:
+
+```zsh
+open 'http://localhost:5173/?workspace=<uuid>'
 ```
 
 Run the complete Stage 1 foundation:

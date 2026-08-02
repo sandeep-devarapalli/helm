@@ -12,15 +12,48 @@ import {
   ShieldCheck,
   Target,
 } from "lucide-react";
-import { Badge, Button, Card, ChatBubble, Chip, MetricTile, ToolCallRow } from "@helm/ui";
+import { Badge, Button, Card, ChatBubble, MetricTile } from "@helm/ui";
+import {
+  loadConversationView,
+  type ConversationView,
+  type RunRefreshState,
+} from "./workbench-data";
 
 type HealthState = "checking" | "ready" | "unavailable";
+
+const workspaceIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const watchlist = [
   { symbol: "AAPL", venue: "NASDAQ", price: "$228.26", change: "+0.62%" },
   { symbol: "NVDA", venue: "NASDAQ", price: "$142.91", change: "+1.28%" },
   { symbol: "AMD", venue: "NASDAQ", price: "$156.74", change: "-0.31%" },
 ];
+
+function useConversationView(workspaceId: string | null): ConversationView {
+  const [loadedResult, setLoadedResult] = useState<{
+    workspaceId: string;
+    view: ConversationView;
+  } | null>(null);
+  const workspaceIsValid = workspaceId !== null && workspaceIdPattern.test(workspaceId);
+
+  useEffect(() => {
+    if (!workspaceIsValid || workspaceId === null) return;
+    const controller = new AbortController();
+    loadConversationView(workspaceId, fetch, controller.signal)
+      .then((view) => setLoadedResult({ workspaceId, view }))
+      .catch((error: unknown) => {
+        if (!(error instanceof Error && error.name === "AbortError")) {
+          setLoadedResult({ workspaceId, view: { status: "unavailable" } });
+        }
+      });
+    return () => controller.abort();
+  }, [workspaceId, workspaceIsValid]);
+
+  if (workspaceId === null) return { status: "context-required" };
+  if (!workspaceIsValid) return { status: "invalid-context" };
+  if (loadedResult?.workspaceId !== workspaceId) return { status: "loading" };
+  return loadedResult.view;
+}
 
 function useApiHealth() {
   const [state, setState] = useState<HealthState>("checking");
@@ -144,43 +177,118 @@ function MarketWorkspace() {
   );
 }
 
-function HermesPanel({ health }: { health: HealthState }) {
+function timestamp(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function RunBadge({ run }: { run: RunRefreshState | null }) {
+  if (run === null) return <Badge>No run</Badge>;
+  if (run.approval_blocked) return <Badge tone="warning" dot>Approval blocked</Badge>;
+  if (run.status === "failed") return <Badge tone="danger" dot>Failed</Badge>;
+  if (run.status === "succeeded" && run.event_stream_complete && !run.projection_gap) {
+    return <Badge tone="success" dot>Succeeded</Badge>;
+  }
+  if (["queued", "submitting", "running"].includes(run.status)) {
+    return <Badge tone="ink" dot>{run.status}</Badge>;
+  }
+  return <Badge tone="warning" dot>{run.status}</Badge>;
+}
+
+function runSummaries(run: RunRefreshState): string[] {
+  const summaries: string[] = [];
+  if (run.approval_blocked) {
+    summaries.push(
+      "Hermes requested an unsupported approval. helm stopped the run; nothing was executed.",
+    );
+  }
+  if (run.status === "failed") {
+    summaries.push("The run failed. Persisted events remain available; no order path exists.");
+  }
+  if (run.projection_gap || !run.event_stream_complete) {
+    summaries.push(
+      "The persisted projection is incomplete. Do not treat this transcript as a complete result.",
+    );
+  }
+  if (run.status === "cancelled" && !run.approval_blocked) {
+    summaries.push("The run was cancelled. Nothing was executed.");
+  }
+  if (summaries.length === 0) {
+    summaries.push(`Terminal run persisted. Tool provenance is ${run.tool_provenance_status}.`);
+  }
+  return summaries;
+}
+
+function ThreadState({ view }: { view: ConversationView }) {
+  if (view.status === "loading") {
+    return <div className="thread-state" role="status"><strong>Loading persisted conversation</strong><span>Reading canonical helm state.</span></div>;
+  }
+  if (view.status === "context-required") {
+    return <div className="thread-state"><strong>Workspace context required</strong><span>Open helm with <code>?workspace=&lt;uuid&gt;</code>. Contexts are never guessed or shared.</span></div>;
+  }
+  if (view.status === "invalid-context") {
+    return <div className="thread-state"><strong>Workspace context is invalid</strong><span>Provide one canonical workspace UUID.</span></div>;
+  }
+  if (view.status === "unavailable") {
+    return <div className="thread-state danger" role="alert"><strong>Conversation unavailable</strong><span>The persisted state could not be loaded. Nothing was submitted or retried.</span></div>;
+  }
+  if (view.status === "empty") {
+    return <div className="thread-state"><strong>No persisted conversation</strong><span>This workspace has no conversation to display. Sending remains disabled.</span></div>;
+  }
+
+  return (
+    <>
+      <div className="conversation-meta">
+        <div><span className="section-label">Persisted conversation</span><strong>{view.conversation.title ?? "Untitled conversation"}</strong></div>
+        <div className="conversation-badges"><Badge tone="info">Read only</Badge>{view.partialHistory ? <Badge tone="warning">Partial history</Badge> : null}</div>
+      </div>
+      {view.messages.length === 0 ? (
+        <div className="thread-state"><strong>No persisted messages</strong><span>The conversation exists, but its public transcript is empty.</span></div>
+      ) : view.messages.map((message) => (
+        <ChatBubble key={message.id} role={message.role === "assistant" ? "agent" : "user"} timestamp={timestamp(message.created_at)}>
+          <p className="message-content">{message.content}</p>
+        </ChatBubble>
+      ))}
+      <Card tone="ghost" padding="md">
+        <div className="run-summary">
+          <div><span className="section-label">Latest Hermes run</span><RunBadge run={view.run} /></div>
+          {view.run === null ? (
+            <p>No Hermes run is persisted for this conversation.</p>
+          ) : runSummaries(view.run).map((summary) => <p key={summary}>{summary}</p>)}
+        </div>
+      </Card>
+      <Card tone="accent" padding="md">
+        <div className="boundary-card">
+          <ShieldCheck size={18} />
+          <div><strong>Execution remains fail-closed</strong><span>No active mandate · no broker credentials · no order path</span></div>
+        </div>
+      </Card>
+    </>
+  );
+}
+
+export function HermesPanel({ health, view }: { health: HealthState; view: ConversationView }) {
+  const hasConversation = view.status === "ready";
   return (
     <aside className="hermes-panel">
       <header className="panel-header">
         <div><Bot size={17} /><strong>Hermes</strong></div>
         <StatusBadge state={health} />
       </header>
-      <div className="thread">
-        <ChatBubble role="user">
-          Help me build a steady US-equity strategy with a maximum drawdown of 8%.
-        </ChatBubble>
-        <ToolCallRow kind="thought" label="Foundation preview" detail="inactive" />
-        <ToolCallRow label="Vibe finance tools" detail="configured · not connected" />
-        <ToolCallRow label="helm policy engine" detail="server-owned" />
-        <ChatBubble role="agent">
-          <div className="agent-answer">
-            <p><strong>The operating boundary is ready, but no strategy has been researched or executed.</strong></p>
-            <p>When the next stages are connected, I will gather evidence and propose a reproducible strategy. Nothing can trade until you commit a mandate, and policy enforcement remains outside my runtime.</p>
-            <div className="answer-chips">
-              <Chip>US equities</Chip>
-              <Chip>Max drawdown 8%</Chip>
-              <Chip>Approval required</Chip>
-            </div>
-          </div>
-        </ChatBubble>
-        <Card tone="accent" padding="md">
-          <div className="boundary-card">
-            <ShieldCheck size={18} />
-            <div><strong>Execution is fail-closed</strong><span>No active mandate · no broker credentials · no order path</span></div>
-          </div>
-        </Card>
+      <div
+        className="thread"
+        aria-busy={view.status === "loading"}
+        aria-live="polite"
+      >
+        <ThreadState view={view} />
       </div>
       <div className="composer">
         <div className="composer-box">
-          <textarea aria-label="Message Hermes" disabled placeholder="Hermes conversation activates in Stage 2" rows={2} />
+          <textarea aria-label="Message Hermes" disabled placeholder="Read-only transcript · sending activates in the next slice" rows={2} />
           <div>
-            <span><Database size={13} />No runtime session</span>
+            <span><Database size={13} />{hasConversation ? "Persisted conversation" : "No conversation session"}</span>
             <Button size="sm" disabled icon={<Activity size={14} />}>Send</Button>
           </div>
         </div>
@@ -191,11 +299,15 @@ function HermesPanel({ health }: { health: HealthState }) {
 
 export function App() {
   const health = useApiHealth();
+  const workspaceId = typeof window === "undefined"
+    ? null
+    : new URLSearchParams(window.location.search).get("workspace");
+  const conversationView = useConversationView(workspaceId);
   return (
     <div className="app-shell">
       <Sidebar />
       <MarketWorkspace />
-      <HermesPanel health={health} />
+      <HermesPanel health={health} view={conversationView} />
       <button className="search-shortcut" aria-label="Search"><Search size={15} /><span>Search</span><kbd>⌘K</kbd></button>
     </div>
   );

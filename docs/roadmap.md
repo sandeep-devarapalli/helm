@@ -341,8 +341,11 @@ The next engineering slice is Workbench activation in
 [issue #14](https://github.com/sandeep-devarapalli/helm/issues/14).
 Stage 2F-A supplies its refresh contract: chronological, cursor-paginated
 public messages and bounded latest-run refresh state remain workspace-scoped.
-The Workbench still renders fixtures; the next slice renders this persisted
-state read-only before enabling submission or SSE reconnection.
+Stage 2F-B renders that state read-only for one explicit workspace context.
+It does not enumerate or guess workspaces, and it keeps partial history,
+projection gaps, failed runs, and approval-blocked runs visibly weak. The
+composer remains disabled. The next slice enables submission and resumable SSE
+without connecting the browser directly to Hermes.
 
 M0 closure evidence in
 [issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) and external
