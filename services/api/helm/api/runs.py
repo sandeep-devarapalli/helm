@@ -156,6 +156,24 @@ class RunDetailResponse(RunResponse):
     structured_citations_available: bool = False
 
 
+class RunRefreshResponse(BaseModel):
+    id: UUID
+    status: str
+    event_stream_complete: bool
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    projection_gap: bool
+    approval_blocked: bool
+    tool_provenance_status: str
+    tool_provenance_complete: bool
+    structured_citations_available: bool = False
+
+
+class LatestRunResponse(BaseModel):
+    run: RunRefreshResponse | None
+
+
 class RunEventResponse(BaseModel):
     sequence_number: int
     event_type: str
@@ -232,6 +250,54 @@ async def has_projection_gap(
     return any(
         isinstance(payload, dict) and payload.get("projection_gap") is True
         for payload in payloads
+    )
+
+
+async def run_detail_response(
+    session: AsyncSession,
+    run: AgentRun,
+) -> RunDetailResponse:
+    return RunDetailResponse(
+        **RunResponse.model_validate(run).model_dump(),
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        approved_memory_snapshot=run.approved_memory_snapshot,
+        approved_memory_snapshot_hash=run.approved_memory_snapshot_hash,
+        projection_gap=await has_projection_gap(session, run),
+        tool_provenance_status=run.tool_provenance_status,
+        tool_provenance_reason=run.tool_provenance_reason,
+        tool_provenance_complete=(
+            run.tool_provenance_status == ToolProvenanceStatus.COMPLETE.value
+        ),
+    )
+
+
+async def run_refresh_response(
+    session: AsyncSession,
+    run: AgentRun,
+) -> RunRefreshResponse:
+    approval_request = await session.scalar(
+        select(RunEvent.id)
+        .where(
+            RunEvent.workspace_id == run.workspace_id,
+            RunEvent.agent_run_id == run.id,
+            RunEvent.event_type == "approval.request",
+        )
+        .limit(1)
+    )
+    return RunRefreshResponse(
+        id=run.id,
+        status=run.status,
+        event_stream_complete=run.event_stream_complete,
+        created_at=run.created_at,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        projection_gap=await has_projection_gap(session, run),
+        approval_blocked=approval_request is not None,
+        tool_provenance_status=run.tool_provenance_status,
+        tool_provenance_complete=(
+            run.tool_provenance_status == ToolProvenanceStatus.COMPLETE.value
+        ),
     )
 
 
@@ -1122,6 +1188,51 @@ async def project_run(
 
 
 @router.get(
+    "/{conversation_id}/runs/latest",
+    response_model=LatestRunResponse,
+)
+async def get_latest_run(
+    workspace_id: UUID,
+    conversation_id: UUID,
+    session: Session,
+) -> LatestRunResponse:
+    conversation = await session.scalar(
+        select(Conversation.id).where(
+            Conversation.id == conversation_id,
+            Conversation.workspace_id == workspace_id,
+        )
+    )
+    if conversation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="conversation not found",
+        )
+    run = await session.scalar(
+        select(AgentRun)
+        .where(
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.conversation_id == conversation_id,
+            AgentRun.status.in_(ACTIVE_STATUSES),
+        )
+        .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+        .limit(1)
+    )
+    if run is None:
+        run = await session.scalar(
+            select(AgentRun)
+            .where(
+                AgentRun.workspace_id == workspace_id,
+                AgentRun.conversation_id == conversation_id,
+            )
+            .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+            .limit(1)
+        )
+    return LatestRunResponse(
+        run=await run_refresh_response(session, run) if run is not None else None
+    )
+
+
+@router.get(
     "/{conversation_id}/runs/{run_id}",
     response_model=RunDetailResponse,
 )
@@ -1132,19 +1243,7 @@ async def get_run(
     session: Session,
 ) -> RunDetailResponse:
     run = await scoped_run(session, workspace_id, conversation_id, run_id)
-    return RunDetailResponse(
-        **RunResponse.model_validate(run).model_dump(),
-        started_at=run.started_at,
-        finished_at=run.finished_at,
-        approved_memory_snapshot=run.approved_memory_snapshot,
-        approved_memory_snapshot_hash=run.approved_memory_snapshot_hash,
-        projection_gap=await has_projection_gap(session, run),
-        tool_provenance_status=run.tool_provenance_status,
-        tool_provenance_reason=run.tool_provenance_reason,
-        tool_provenance_complete=(
-            run.tool_provenance_status == ToolProvenanceStatus.COMPLETE.value
-        ),
-    )
+    return await run_detail_response(session, run)
 
 
 @router.get(

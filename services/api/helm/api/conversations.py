@@ -1,7 +1,7 @@
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -10,7 +10,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from helm.database import get_session
-from helm.domain.models import Conversation, Workspace
+from helm.domain.models import Conversation, Message, MessageRole, Workspace
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/conversations", tags=["conversations"])
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -44,6 +44,22 @@ class ConversationPage(BaseModel):
     next_cursor: str | None
 
 
+class MessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    workspace_id: UUID
+    conversation_id: UUID
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
+class MessagePage(BaseModel):
+    items: list[MessageResponse]
+    next_cursor: str | None
+
+
 def encode_cursor(conversation: Conversation) -> str:
     created_at = conversation.created_at
     if created_at.tzinfo is None:
@@ -66,6 +82,31 @@ def decode_cursor(cursor: str) -> tuple[datetime, UUID]:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="invalid conversation cursor",
+        ) from error
+
+
+def encode_message_cursor(message: Message) -> str:
+    created_at = message.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    value = f"{created_at.isoformat()}|{message.id}"
+    return urlsafe_b64encode(value.encode()).decode().rstrip("=")
+
+
+def decode_message_cursor(cursor: str) -> tuple[datetime, UUID]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        created_at_raw, message_id_raw = (
+            urlsafe_b64decode(padded.encode()).decode().rsplit("|", 1)
+        )
+        created_at = datetime.fromisoformat(created_at_raw)
+        if created_at.tzinfo is None:
+            raise ValueError
+        return created_at, UUID(message_id_raw)
+    except (Base64Error, UnicodeDecodeError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid message cursor",
         ) from error
 
 
@@ -145,3 +186,54 @@ async def get_conversation(
             detail="conversation not found",
         )
     return conversation
+
+
+@router.get("/{conversation_id}/messages", response_model=MessagePage)
+async def list_messages(
+    workspace_id: UUID,
+    conversation_id: UUID,
+    session: Session,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    cursor: str | None = None,
+) -> MessagePage:
+    conversation = await session.scalar(
+        select(Conversation.id).where(
+            Conversation.id == conversation_id,
+            Conversation.workspace_id == workspace_id,
+        )
+    )
+    if conversation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="conversation not found",
+        )
+
+    statement = select(Message).where(
+        Message.workspace_id == workspace_id,
+        Message.conversation_id == conversation_id,
+        Message.role.in_((MessageRole.USER.value, MessageRole.ASSISTANT.value)),
+    )
+    if cursor is not None:
+        cursor_created_at, cursor_id = decode_message_cursor(cursor)
+        statement = statement.where(
+            or_(
+                Message.created_at > cursor_created_at,
+                and_(
+                    Message.created_at == cursor_created_at,
+                    Message.id > cursor_id,
+                ),
+            )
+        )
+    messages = list(
+        (
+            await session.scalars(
+                statement.order_by(Message.created_at, Message.id).limit(limit + 1)
+            )
+        ).all()
+    )
+    has_more = len(messages) > limit
+    items = messages[:limit]
+    return MessagePage(
+        items=[MessageResponse.model_validate(item) for item in items],
+        next_cursor=encode_message_cursor(items[-1]) if has_more else None,
+    )
