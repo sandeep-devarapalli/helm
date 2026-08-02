@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    Numeric,
     Text,
     UniqueConstraint,
     Uuid,
@@ -32,6 +34,22 @@ def utc_now() -> datetime:
 class OperatingContext(StrEnum):
     INDIVIDUAL_SELF_DIRECTED = "individual_self_directed"
     INSTITUTIONAL_PROPRIETARY = "institutional_proprietary"
+
+
+class VenueKind(StrEnum):
+    SECURITIES_EXCHANGE = "securities_exchange"
+    CRYPTO_VENUE = "crypto_venue"
+
+
+class InstrumentKind(StrEnum):
+    COMMON_STOCK = "common_stock"
+    ETF = "etf"
+    CRYPTO_ASSET = "crypto_asset"
+
+
+class ListingStatus(StrEnum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
 
 
 class MessageRole(StrEnum):
@@ -81,6 +99,140 @@ class Workspace(Base):
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     operating_context: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=func.now(),
+    )
+
+
+class Currency(Base):
+    __tablename__ = "currencies"
+    __table_args__ = (
+        CheckConstraint(
+            "length(code) between 3 and 12 and code = upper(code) and code not like '% %'",
+            name="code_shape",
+        ),
+        CheckConstraint(
+            "length(trim(name)) between 1 and 120",
+            name="name_length",
+        ),
+        CheckConstraint("minor_unit between 0 and 18", name="minor_unit_range"),
+    )
+
+    code: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    minor_unit: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class Venue(Base):
+    __tablename__ = "venues"
+    __table_args__ = (
+        UniqueConstraint("code"),
+        UniqueConstraint("mic"),
+        CheckConstraint(
+            "length(code) between 2 and 32 and code = upper(code) and code not like '% %'",
+            name="code_shape",
+        ),
+        CheckConstraint(
+            "mic is null or (length(mic) = 4 and mic = upper(mic) and mic not like '% %')",
+            name="mic_shape",
+        ),
+        CheckConstraint(
+            "kind in ('securities_exchange', 'crypto_venue')",
+            name="kind_allowed",
+        ),
+        CheckConstraint(
+            "length(trim(name)) between 1 and 160",
+            name="name_length",
+        ),
+        CheckConstraint(
+            "length(trim(timezone)) between 1 and 64",
+            name="timezone_length",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    code: Mapped[str] = mapped_column(Text, nullable=False)
+    mic: Mapped[str | None] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    timezone: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class Instrument(Base):
+    __tablename__ = "instruments"
+    __table_args__ = (
+        CheckConstraint(
+            "kind in ('common_stock', 'etf', 'crypto_asset')",
+            name="kind_allowed",
+        ),
+        CheckConstraint(
+            "length(trim(name)) between 1 and 200",
+            name="name_length",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=func.now(),
+    )
+
+
+class Listing(Base):
+    __tablename__ = "listings"
+    __table_args__ = (
+        UniqueConstraint("venue_id", "venue_symbol"),
+        CheckConstraint(
+            "length(trim(venue_symbol)) between 1 and 64",
+            name="venue_symbol_length",
+        ),
+        CheckConstraint("price_increment > 0", name="price_increment_positive"),
+        CheckConstraint(
+            "quantity_increment > 0",
+            name="quantity_increment_positive",
+        ),
+        CheckConstraint(
+            "status in ('active', 'inactive')",
+            name="status_allowed",
+        ),
+        Index("ix_listings_instrument_venue", "instrument_id", "venue_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    instrument_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("instruments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    venue_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("venues.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    venue_symbol: Mapped[str] = mapped_column(Text, nullable=False)
+    quote_currency_code: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("currencies.code", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    price_increment: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    quantity_increment: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default=ListingStatus.ACTIVE.value,
+        server_default=ListingStatus.ACTIVE.value,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

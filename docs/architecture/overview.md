@@ -9,7 +9,10 @@ helm starts as a modular monolith plus one durable worker.
 - Upstream Hermes owns the agent loop, sessions, planning, memory, skills, and tool coordination.
 - Pinned Vibe-Trading exposes a narrow finance MCP surface.
 
-Stage 1 implements only the repository, UI, health, configuration, and runtime boundaries. Domain persistence, agent projection, backtesting, and paper execution are later explicit stages.
+The current foundation includes persisted Hermes conversations, ordered event
+projection, approval-gated preferences, and the M3A market-identity spine.
+Research, backtesting, mandates, broker integration, and paper or live execution
+remain later explicit stages.
 
 helm is designed for isolated individual self-directed and institutional
 proprietary operating contexts. Authentication does not imply trading
