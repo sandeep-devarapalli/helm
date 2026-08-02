@@ -1,6 +1,6 @@
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-type ConversationSummary = {
+export type ConversationSummary = {
   id: string;
   title: string | null;
   created_at: string;
@@ -78,6 +78,21 @@ export async function loadConversationView(
     run: latestRun.run,
     partialHistory: messagePage.next_cursor !== null,
   };
+}
+
+export async function createConversation(
+  workspaceId: string,
+  fetcher: FetchLike = fetch,
+): Promise<ConversationSummary> {
+  const response = await fetcher(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/conversations`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    },
+  );
+  return responseJson<ConversationSummary>(response);
 }
 
 export async function submitConversationMessage(

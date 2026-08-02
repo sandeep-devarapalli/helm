@@ -50,6 +50,12 @@ jobs:
           pnpm test
           pnpm build
 
+      - name: Install Workbench browser
+        run: pnpm --filter @helm/web exec playwright install --with-deps --only-shell chromium
+
+      - name: Verify Workbench browser matrix
+        run: pnpm test:e2e
+
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.11.28"
