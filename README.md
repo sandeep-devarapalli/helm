@@ -19,9 +19,10 @@ Stage 1 is a public foundation, not a trading release.
   run state so future Workbench refresh recovery does not rely on browser state.
 - The Workbench can render the newest persisted conversation for an explicit
   `?workspace=<uuid>` context. It does not enumerate or guess across isolated
-  workspaces. For an existing conversation, the composer submits through helm
-  and follows helm-owned persisted SSE; streamed text remains provisional until
-  the canonical terminal transcript is reloaded.
+  workspaces. Its first message creates one untitled workspace conversation;
+  later messages reuse it. Every submission and persisted SSE connection goes
+  through helm, and streamed text remains provisional until the canonical
+  terminal transcript is reloaded.
 - Terminal Hermes sessions reconcile bounded, allowlisted tool provenance with
   explicit complete, partial, unavailable, or conflicting state. Structured
   citation claims remain disabled.
@@ -29,8 +30,7 @@ Stage 1 is a public foundation, not a trading release.
   rejection. Only allowlisted presentation preferences reach future Hermes
   runs, and each run stores the exact approved snapshot and hash.
 - Built-in and external Hermes memory providers remain disabled. The Workbench
-  still renders market fixtures; conversation creation and autonomous learning
-  are not implemented.
+  still renders market fixtures; autonomous learning is not implemented.
 - The Hermes profile pins `gpt-5.4-mini-2026-03-17` through the upstream `openai-api` provider.
 - Research, backtests, mandates, broker credentials, orders, fills, learning, and live trading are not implemented.
 - Values visible in the Workbench are labeled fixtures. The product is paper-trading-first; live capital remains blocked.
@@ -112,6 +112,8 @@ The setup command prompts without echo and saves the provider credential in the 
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm --filter @helm/web exec playwright install --only-shell chromium
+pnpm test:e2e
 pnpm build
 
 uv run ruff check .
@@ -122,6 +124,11 @@ uv lock --check
 node scripts/verify-runtime-locks.mjs
 docker compose -f infra/docker-compose.yml config
 ```
+
+The Playwright matrix uses a deterministic mock helm API to prove browser-side
+creation, active and duplicate-submit blocking, accepted-run response-loss
+reconciliation, persisted SSE recovery, terminal failure, and workspace
+isolation. It is boundary evidence, not real Hermes or trading-execution proof.
 
 ## Upstream policy
 

@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { HermesPanel, openedRunStream, type RunStreamState } from "./App";
 import {
+  createConversation,
   loadConversationView,
   submitConversationMessage,
   type ConversationView,
@@ -85,9 +86,26 @@ describe("helm persisted Workbench", () => {
     );
   });
 
+  it("creates one untitled conversation only inside the explicit workspace", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      id: conversationId,
+      workspace_id: workspaceId,
+      title: null,
+      created_at: "2026-08-02T04:00:00Z",
+    }, 201));
+
+    await createConversation(workspaceId, fetcher);
+
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledWith(
+      `/api/workspaces/${workspaceId}/conversations`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({}) }),
+    );
+  });
+
   it.each([
     [{ status: "loading" } as const, "Loading persisted conversation"],
-    [{ status: "empty" } as const, "No persisted conversation"],
+    [{ status: "empty" } as const, "Start a persisted conversation"],
     [{ status: "unavailable" } as const, "Conversation unavailable"],
     [{ status: "context-required" } as const, "Workspace context required"],
   ])("renders the %s state explicitly", (view, expected) => {
@@ -186,6 +204,14 @@ describe("helm persisted Workbench", () => {
 
     expect(markup).toContain("Ask Hermes to research or explain");
     expect(markup).toContain("Persisted conversation");
+  });
+
+  it("enables the first message for an empty valid workspace", () => {
+    const markup = renderView({ status: "empty" }, true);
+
+    expect(markup).toContain("Start a persisted conversation");
+    expect(markup).toContain("Ask Hermes to research or explain");
+    expect(markup).toContain("New persisted conversation");
   });
 
   it("labels streamed text as provisional and blocks another active submission", () => {

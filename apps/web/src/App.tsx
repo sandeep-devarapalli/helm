@@ -14,10 +14,10 @@ import {
 } from "lucide-react";
 import { Badge, Button, Card, ChatBubble, MetricTile } from "@helm/ui";
 import {
+  createConversation,
   loadConversationView,
   submitConversationMessage,
   type ConversationView,
-  type RunCreateResponse,
   type RunRefreshState,
 } from "./workbench-data";
 import {
@@ -83,13 +83,6 @@ function useConversationView(workspaceId: string | null) {
     latestRefresh.current = request;
     return request;
   }, [workspaceId, workspaceIsValid]);
-  const updateRun = useCallback((run: RunRefreshState) => {
-    setLoadedResult((result) => {
-      if (result?.workspaceId !== workspaceId || result.view.status !== "ready") return result;
-      return { ...result, view: { ...result.view, run } };
-    });
-  }, [workspaceId]);
-
   useEffect(() => {
     if (!workspaceIsValid || workspaceId === null) return;
     const controller = new AbortController();
@@ -114,7 +107,7 @@ function useConversationView(workspaceId: string | null) {
   else if (!workspaceIsValid) view = { status: "invalid-context" };
   else if (loadedResult?.workspaceId !== workspaceId) view = { status: "loading" };
   else view = loadedResult.view;
-  return { view, refresh, updateRun };
+  return { view, refresh };
 }
 
 function useApiHealth() {
@@ -306,7 +299,7 @@ function ThreadState({ view, stream }: { view: ConversationView; stream: RunStre
     return <div className="thread-state danger" role="alert"><strong>Conversation unavailable</strong><span>The persisted state could not be loaded. Nothing was submitted or retried.</span></div>;
   }
   if (view.status === "empty") {
-    return <div className="thread-state"><strong>No persisted conversation</strong><span>This workspace has no conversation to display. Sending remains disabled.</span></div>;
+    return <div className="thread-state"><strong>Start a persisted conversation</strong><span>Your first message creates one workspace-scoped conversation, then submits one Hermes run through helm.</span></div>;
   }
   const streamIsActive = stream.runId === view.run?.id && isRunActive(view.run?.status);
 
@@ -370,13 +363,24 @@ export function HermesPanel({
 }) {
   const [draft, setDraft] = useState("");
   const hasConversation = view.status === "ready";
+  const conversationId = hasConversation ? view.conversation.id : null;
+  const [draftConversationId, setDraftConversationId] = useState(conversationId);
+  if (conversationId && conversationId !== draftConversationId) {
+    if (draftConversationId) setDraft("");
+    setDraftConversationId(conversationId);
+  }
+  const canStartConversation = view.status === "empty";
   const runBlocksSubmission = hasConversation && (
     isRunActive(view.run?.status)
     || view.run?.status === "indeterminate"
     || view.run?.approval_blocked === true
     || view.run?.projection_gap === true
   );
-  const canCompose = Boolean(onSubmit) && health === "ready" && hasConversation && !runBlocksSubmission && !submitting;
+  const canCompose = Boolean(onSubmit)
+    && health === "ready"
+    && (hasConversation || canStartConversation)
+    && !runBlocksSubmission
+    && !submitting;
   const activityLabel = submitting
     ? "Submitting to helm"
     : stream.phase === "reconnecting"
@@ -385,7 +389,9 @@ export function HermesPanel({
         ? "Hermes run active"
         : hasConversation
           ? "Persisted conversation"
-          : "No conversation session";
+          : canStartConversation
+            ? "New persisted conversation"
+            : "No conversation session";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -444,7 +450,7 @@ export function App() {
   const workspaceId = typeof window === "undefined"
     ? null
     : new URLSearchParams(window.location.search).get("workspace");
-  const { view: conversationView, refresh, updateRun } = useConversationView(workspaceId);
+  const { view: conversationView, refresh } = useConversationView(workspaceId);
   const [stream, setStream] = useState<RunStreamState>(idleRunStream);
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -481,28 +487,35 @@ export function App() {
   }, [conversationId, refresh, runId, runStatus, workspaceId]);
 
   const submit = useCallback(async (content: string) => {
-    if (!workspaceId || !conversationId) throw new Error("conversation context unavailable");
+    if (!workspaceId) throw new Error("workspace context unavailable");
     if (submitInFlight.current) throw new Error("message submission already in progress");
     submitInFlight.current = true;
     setSubmitting(true);
     setSubmissionError(null);
+    let targetConversationId = conversationId;
     try {
-      const run = await submitConversationMessage(workspaceId, conversationId, content);
-      updateRun(runRefreshFromCreate(run));
-      void refresh();
+      targetConversationId ??= (await createConversation(workspaceId)).id;
+      await submitConversationMessage(workspaceId, targetConversationId, content);
+      await refresh();
     } catch (error) {
+      const refreshedView = await refresh();
+      if (submissionIsPersisted(
+        refreshedView,
+        targetConversationId,
+        content,
+        runId,
+      )) return;
       setSubmissionError(
         error instanceof Error
-          ? "helm could not submit this message. The draft was preserved; nothing was retried."
+          ? "helm could not persist this request. The draft was preserved; nothing was retried."
           : "Message submission failed before a run could be confirmed.",
       );
-      await refresh();
       throw error;
     } finally {
       submitInFlight.current = false;
       setSubmitting(false);
     }
-  }, [conversationId, refresh, updateRun, workspaceId]);
+  }, [conversationId, refresh, runId, workspaceId]);
 
   const visibleStream = runId && isRunActive(runStatus)
     ? stream.runId === runId
@@ -514,7 +527,7 @@ export function App() {
       <Sidebar />
       <MarketWorkspace />
       <HermesPanel
-        key={conversationId ?? workspaceId ?? "no-workspace"}
+        key={workspaceId ?? "no-workspace"}
         health={health}
         view={conversationView}
         stream={visibleStream}
@@ -527,14 +540,19 @@ export function App() {
   );
 }
 
-function runRefreshFromCreate(run: RunCreateResponse): RunRefreshState {
-  const indeterminate = run.status === "indeterminate";
-  return {
-    id: run.id,
-    status: run.status,
-    event_stream_complete: run.event_stream_complete,
-    projection_gap: indeterminate,
-    approval_blocked: false,
-    tool_provenance_status: indeterminate ? "unavailable" : "pending",
-  };
+function submissionIsPersisted(
+  view: ConversationView,
+  conversationId: string | null,
+  content: string,
+  previousRunId: string | null,
+) {
+  if (
+    !conversationId
+    || view.status !== "ready"
+    || view.conversation.id !== conversationId
+    || !view.run
+    || view.run.id === previousRunId
+  ) return false;
+  const lastUserMessage = [...view.messages].reverse().find((message) => message.role === "user");
+  return lastUserMessage?.content === content;
 }

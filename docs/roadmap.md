@@ -87,7 +87,7 @@ current foundation and available paper tooling. Multi-market concepts are
 modeled before broker adapters so U.S.-specific assumptions do not become the
 platform's permanent domain model.
 
-## Progress snapshot — July 30, 2026
+## Progress snapshot — August 2, 2026
 
 GitHub issue counts are delivery records, not a substitute for milestone exit
 gates. Current verified status is:
@@ -96,7 +96,7 @@ gates. Current verified status is:
 | --- | --- | --- |
 | M0 | Closure verification | Foundation code and main CI are green. [Issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) must record one clean-clone startup and exact runtime tool-allowlist proof before M0 closes. |
 | M1 | External evidence pending | [PR #6](https://github.com/sandeep-devarapalli/helm/pull/6) added the Dubai decision packet. [Issue #16](https://github.com/sandeep-devarapalli/helm/issues/16) tracks qualified entity, perimeter, tax, broker, data, governance, and market-access decisions. |
-| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. [PR #18](https://github.com/sandeep-devarapalli/helm/pull/18) added persisted resumable SSE, [PR #19](https://github.com/sandeep-devarapalli/helm/pull/19) added bounded terminal tool provenance, and [PR #20](https://github.com/sandeep-devarapalli/helm/pull/20) added approval-gated soft preferences. [Issue #14](https://github.com/sandeep-devarapalli/helm/issues/14) remains the current Workbench-activation milestone. |
+| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. [PR #18](https://github.com/sandeep-devarapalli/helm/pull/18) added persisted resumable SSE, [PR #19](https://github.com/sandeep-devarapalli/helm/pull/19) added bounded terminal tool provenance, [PR #20](https://github.com/sandeep-devarapalli/helm/pull/20) added approval-gated workspace soft preferences, and [PR #23](https://github.com/sandeep-devarapalli/helm/pull/23) activated controlled existing-conversation submission. First-conversation creation and the automated browser matrix are the final [issue #14](https://github.com/sandeep-devarapalli/helm/issues/14) gate. |
 | M3–M10 | Planned | No implementation claim. Start only through focused issues after the required earlier domain gates. |
 | M11A–M12 | Gated or deferred | No live authority exists. Legal, broker, data, security, governance, and market-specific gates remain unsatisfied. |
 
@@ -349,7 +349,13 @@ existing conversation and consumes helm-owned resumable SSE without connecting
 the browser directly to Hermes. Replayed event IDs are deduplicated, gaps fail
 closed, streamed text remains provisional, and terminal events reload canonical
 Postgres state. Conversation creation and the complete reconnect browser-test
-matrix remain open in issue #14.
+matrix remain open in issue #14. Stage 2F-D creates one untitled conversation
+from the first message and adds deterministic real-browser coverage for same-
+tick duplicate submission, native `Last-Event-ID` recovery, provisional-to-
+canonical replacement, accepted-run response-loss reconciliation, terminal
+failure, restricted-surface absence, and workspace isolation. The mock browser
+matrix proves the helm API boundary; it does not claim a real Hermes run or
+execution capability.
 
 M0 closure evidence in
 [issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) and external

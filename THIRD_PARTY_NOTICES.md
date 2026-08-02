@@ -26,6 +26,12 @@ The browser specimens load these projects from version-pinned CDN URLs. They are
 | Babel Standalone | MIT | https://github.com/babel/babel |
 | IBM Plex Sans and IBM Plex Mono | SIL Open Font License 1.1 | https://github.com/IBM/plex |
 
+## Development and verification dependencies
+
+| Project | Version | License | Source |
+|---|---:|---|---|
+| Playwright | `1.62.0` | Apache-2.0 | https://github.com/microsoft/playwright/tree/v1.62.0 |
+
 ## External runtime dependencies
 
 The following upstream projects run as pinned external packages or containers. Their source trees are not copied into helm.
