@@ -341,6 +341,14 @@ button {
   overflow-wrap: anywhere;
 }
 
+.live-projection {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: var(--border-hairline);
+  border-bottom: var(--border-hairline);
+}
+
 .thread-state {
   display: grid;
   gap: var(--space-2);
@@ -386,6 +394,17 @@ button {
   border-top: var(--border-hairline);
 }
 
+.composer-error {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+}
+
 .composer-box {
   padding: var(--space-3);
   border: var(--border-hairline);
@@ -400,7 +419,12 @@ button {
   border: 0;
   outline: 0;
   background: transparent;
+  color: var(--color-text);
+}
+
+.composer textarea:disabled {
   color: var(--color-text-muted);
+  cursor: not-allowed;
 }
 
 .composer-box > div {
