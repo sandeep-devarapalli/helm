@@ -68,20 +68,21 @@ test.beforeEach(async ({ request }) => {
   await request.post("/api/__test/reset");
 });
 
-test("public landing states the current boundary without touching the API", async ({ page }) => {
+test("public landing explains the investor outcome and current boundary without touching the API", async ({ page }) => {
   const assertBoundary = monitorBrowserBoundary(page);
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "A governed conversational foundation for AI trading." })).toBeVisible();
-  await expect(page.getByText("Market values are fixtures", { exact: true })).toBeVisible();
-  await expect(page.getByText("A public foundation, not a trading release.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("rowheader", { name: "U.S. equities" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "One place to research an idea, test the strategy, and keep control." })).toBeVisible();
+  await expect(page.getByText("Early product preview", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Keep the evidence, strategy, limits, and approval together." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Research an investment" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "U.S. stocks and ETFs" })).toBeVisible();
   await expect(page.getByRole("rowheader", { name: "Indian equities" })).toBeVisible();
   await expect(page.getByRole("rowheader", { name: "Crypto spot" })).toBeVisible();
-  await expect(page.getByRole("rowheader", { name: "Commodity ETF exposure" })).toBeVisible();
-  await expect(page.getByText("Gold appears only as a structural ETF identity fixture; silver is not modeled or available.", { exact: false })).toBeVisible();
-  await expect(page.getByText("Research · backtests · mandates · broker integration · orders · fills · learning · paper or live trading", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open workbench" }).first()).toHaveAttribute("href", "/app");
+  await expect(page.getByRole("rowheader", { name: "Listed commodity ETFs" })).toBeVisible();
+  await expect(page.getByText("Target coverage, not current market access.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Trading without human approval · investment advice · managing client capital", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore current Workbench" }).first()).toHaveAttribute("href", "/app");
   assertBoundary([]);
 });
 
@@ -89,8 +90,8 @@ test("public landing fits a narrow mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "A governed conversational foundation for AI trading." })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Multi-market foundations, not market access." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "One place to research an idea, test the strategy, and keep control." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "One disciplined workflow across the assets investors already consider." })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
