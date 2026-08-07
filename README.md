@@ -31,6 +31,9 @@ Stage 1 is a public foundation, not a trading release.
   runs, and each run stores the exact approved snapshot and hash.
 - Built-in and external Hermes memory providers remain disabled. The Workbench
   still renders market fixtures; autonomous learning is not implemented.
+- The M3 market-identity spine separates currencies, venues, canonical
+  instruments, and venue-specific listings. It has no public resolver or
+  broker/execution behavior yet.
 - The Hermes profile pins `gpt-5.4-mini-2026-03-17` through the upstream `openai-api` provider.
 - Research, backtests, mandates, broker credentials, orders, fills, learning, and live trading are not implemented.
 - Values visible in the Workbench are labeled fixtures. The product is paper-trading-first; live capital remains blocked.

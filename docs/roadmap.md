@@ -96,8 +96,9 @@ gates. Current verified status is:
 | --- | --- | --- |
 | M0 | Closure verification | Foundation code and main CI are green. [Issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) must record one clean-clone startup and exact runtime tool-allowlist proof before M0 closes. |
 | M1 | External evidence pending | [PR #6](https://github.com/sandeep-devarapalli/helm/pull/6) added the Dubai decision packet. [Issue #16](https://github.com/sandeep-devarapalli/helm/issues/16) tracks qualified entity, perimeter, tax, broker, data, governance, and market-access decisions. |
-| M2 | In progress | [PRs #7–#10](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established persistence, Hermes run submission, lifecycle safety, ordered event projection, and terminal messages. [PR #18](https://github.com/sandeep-devarapalli/helm/pull/18) added persisted resumable SSE, [PR #19](https://github.com/sandeep-devarapalli/helm/pull/19) added bounded terminal tool provenance, [PR #20](https://github.com/sandeep-devarapalli/helm/pull/20) added approval-gated workspace soft preferences, and [PR #23](https://github.com/sandeep-devarapalli/helm/pull/23) activated controlled existing-conversation submission. First-conversation creation and the automated browser matrix are the final [issue #14](https://github.com/sandeep-devarapalli/helm/issues/14) gate. |
-| M3–M10 | Planned | No implementation claim. Start only through focused issues after the required earlier domain gates. |
+| M2 | Completed | [PRs #7–#24](https://github.com/sandeep-devarapalli/helm/pulls?q=is%3Apr+milestone%3A%22M2+%E2%80%94+Persistent+Hermes+conversation%22+is%3Aclosed) established durable Hermes conversations, ordered projection, resumable SSE, bounded provenance, approval-gated preferences, and the persisted Workbench. [PR #24](https://github.com/sandeep-devarapalli/helm/pull/24) closed the final [issue #14](https://github.com/sandeep-devarapalli/helm/issues/14) browser gate. |
+| M3 | In progress | [Issue #25](https://github.com/sandeep-devarapalli/helm/issues/25) starts the persistence-only market-identity spine: currencies, venues, canonical instruments, and venue listings. Later M3 slices remain unimplemented. |
+| M4–M10 | Planned | No implementation claim. Start only through focused issues after the required earlier domain gates. |
 | M11A–M12 | Gated or deferred | No live authority exists. Legal, broker, data, security, governance, and market-specific gates remain unsatisfied. |
 
 ## Milestones
@@ -357,11 +358,20 @@ failure, restricted-surface absence, and workspace isolation. The mock browser
 matrix proves the helm API boundary; it does not claim a real Hermes run or
 execution capability.
 
+M2 is complete. M3A begins in
+[issue #25](https://github.com/sandeep-devarapalli/helm/issues/25) with global
+reference contracts for currencies, venues, canonical instruments, and venue-
+specific listings. Symbols remain venue-scoped metadata rather than canonical
+IDs, and price and quantity increments use decimal storage. Derivative
+contracts, calendars, settlement, corporate actions, FX, tax lots, data
+entitlements, broker symbols, research, and execution remain separate later
+slices.
+
 M0 closure evidence in
 [issue #15](https://github.com/sandeep-devarapalli/helm/issues/15) and external
 M1 decisions in
 [issue #16](https://github.com/sandeep-devarapalli/helm/issues/16) proceed as
-verification and institutional-governance workstreams alongside M2.
+verification and institutional-governance workstreams alongside M3.
 
 ## Planning rules
 
