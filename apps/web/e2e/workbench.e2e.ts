@@ -82,6 +82,11 @@ test("public landing explains the investor outcome and current boundary without 
   await expect(page.getByRole("rowheader", { name: "Listed commodity ETFs" })).toBeVisible();
   await expect(page.getByText("Target coverage, not current market access.", { exact: false })).toBeVisible();
   await expect(page.getByText("Trading without human approval · investment advice · managing client capital", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "See what is complete, what is being built, and what remains gated." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Persistent Hermes conversation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Multi-market foundation" })).toBeVisible();
+  await expect(page.getByText(/^Verified [A-Z][a-z]+ \d{1,2}, \d{4}$/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Read the full roadmap on GitHub" })).toHaveAttribute("href", "https://github.com/sandeep-devarapalli/helm/blob/main/docs/roadmap.md");
   await expect(page.getByRole("link", { name: "Explore current Workbench" }).first()).toHaveAttribute("href", "/app");
   assertBoundary([]);
 });

@@ -7,9 +7,14 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import "./landing.css";
+import { roadmapSnapshot } from "./roadmap";
 
 const repositoryUrl = "https://github.com/sandeep-devarapalli/helm";
-const roadmapUrl = `${repositoryUrl}/blob/main/docs/roadmap.md`;
+const sourceRef = import.meta.env.VITE_SOURCE_REF || "main";
+const roadmapUrl = `${repositoryUrl}/blob/${sourceRef}/docs/roadmap.md`;
+const isPublicSite = import.meta.env.VITE_PUBLIC_SITE === "true";
+const siteHomeUrl = import.meta.env.BASE_URL;
+const workbenchUrl = `${import.meta.env.BASE_URL}app`;
 
 const benefits = [
   {
@@ -112,18 +117,22 @@ function SectionIntro({ eyebrow, title, body }: { eyebrow: string; title: string
 }
 
 export function LandingPage() {
+  const workbenchAction = isPublicSite
+    ? { href: "#roadmap", label: "View roadmap" }
+    : { href: workbenchUrl, label: "Open Workbench" };
+
   return (
     <div className="landing-page">
       <header className="landing-header">
-        <a className="landing-wordmark" href="/" aria-label="helm home">helm</a>
+        <a className="landing-wordmark" href={siteHomeUrl} aria-label="helm home">helm</a>
         <nav aria-label="Landing page">
           <a href="#product">Product</a>
           <a href="#use-cases">Use cases</a>
           <a href="#markets">Markets</a>
           <a href="#safety">Safety</a>
-          <a href="#availability">Availability</a>
+          <a href="#roadmap">Roadmap</a>
         </nav>
-        <a className="header-action" href="/app">Open Workbench <ArrowRight size={15} /></a>
+        <a className="header-action" href={workbenchAction.href}>{workbenchAction.label} <ArrowRight size={15} /></a>
       </header>
 
       <main>
@@ -134,7 +143,7 @@ export function LandingPage() {
             <p className="hero-lede">helm is being built for individual investors and professional teams managing their own capital. Explore U.S. and Indian stocks, crypto, and listed commodity ETFs; test a strategy; and set exactly what would be allowed to trade.</p>
             <div className="hero-actions">
               <a className="primary-link" href="#how-it-works">See how it works <ArrowRight size={16} /></a>
-              <a className="secondary-link" href="/app">Explore current Workbench <ArrowRight size={16} /></a>
+              <a className="secondary-link" href={workbenchAction.href}>{isPublicSite ? "See roadmap status" : "Explore current Workbench"} <ArrowRight size={16} /></a>
             </div>
             <div className="hero-status" aria-label="Current product availability">
               <span><i />Early product preview</span>
@@ -271,6 +280,32 @@ export function LandingPage() {
           </div>
         </section>
 
+        <section className="landing-section roadmap-section" id="roadmap">
+          <div className="roadmap-intro">
+            <SectionIntro
+              eyebrow="Public roadmap"
+              title="See what is complete, what is being built, and what remains gated."
+              body="This status is generated from the same roadmap maintained in the helm repository. It updates with each published build."
+            />
+            <div className="roadmap-source">
+              <span>Verified {roadmapSnapshot.date}</span>
+              <a href={roadmapUrl}>Read the full roadmap on GitHub <ArrowRight size={14} /></a>
+            </div>
+          </div>
+          <ol className="roadmap-list">
+            {roadmapSnapshot.milestones.map((milestone) => (
+              <li key={milestone.code}>
+                <span className="roadmap-code" data-numeric>{milestone.code}</span>
+                <div className="roadmap-copy">
+                  <h3>{milestone.title}</h3>
+                  <p>{milestone.outcome}</p>
+                </div>
+                <span className="roadmap-status" data-tone={milestone.tone}>{milestone.status}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+
         <section className="landing-section faq-section" id="faq">
           <SectionIntro
             eyebrow="FAQ"
@@ -288,7 +323,9 @@ export function LandingPage() {
             </details>
             <details>
               <summary>What can I use today?</summary>
-              <p>You can explore the conversational Workbench and its product direction. Product-grade research, backtesting, paper trading, and live trading are not yet available.</p>
+              <p>{isPublicSite
+                ? "This public site shows helm’s product direction and current roadmap. The repository contains the conversational foundation; product-grade research, backtesting, paper trading, and live trading are not yet available."
+                : "You can explore the conversational Workbench and its product direction. Product-grade research, backtesting, paper trading, and live trading are not yet available."}</p>
             </details>
             <details>
               <summary>Which markets are planned?</summary>
@@ -307,13 +344,15 @@ export function LandingPage() {
 
         <section className="landing-cta">
           <div>
-            <span className="landing-eyebrow">Open product preview</span>
+            <span className="landing-eyebrow">{isPublicSite ? "Follow the build" : "Open product preview"}</span>
             <h2>Start with the decision, not the order ticket.</h2>
-            <p>Explore the conversational Workbench and see the design for bringing the question, evidence, strategy, limits, and approval into one workspace.</p>
+            <p>{isPublicSite
+              ? "See how helm is moving from its conversational foundation toward evidence-backed research, strategy testing, and carefully gated paper trading."
+              : "Explore the conversational Workbench and see the design for bringing the question, evidence, strategy, limits, and approval into one workspace."}</p>
           </div>
           <div className="cta-links">
-            <a className="primary-link" href="/app">Explore current Workbench <ArrowRight size={16} /></a>
-            <a className="secondary-link" href={roadmapUrl}>View product roadmap <ArrowRight size={16} /></a>
+            <a className="primary-link" href={workbenchAction.href}>{isPublicSite ? "See roadmap status" : "Explore current Workbench"} <ArrowRight size={16} /></a>
+            <a className="secondary-link" href={roadmapUrl}>{isPublicSite ? "View source on GitHub" : "View product roadmap"} <ArrowRight size={16} /></a>
           </div>
         </section>
       </main>

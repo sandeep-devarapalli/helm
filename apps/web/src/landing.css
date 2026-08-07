@@ -599,6 +599,93 @@
   line-height: var(--leading-relaxed);
 }
 
+.roadmap-section {
+  display: grid;
+  grid-template-columns: 0.7fr 1.3fr;
+  gap: var(--space-16);
+}
+
+.roadmap-source {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.roadmap-source span {
+  color: var(--color-text-muted);
+}
+
+.roadmap-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-link);
+}
+
+.roadmap-list {
+  margin: 0;
+  padding: 0;
+  border-top: var(--border-hairline);
+  list-style: none;
+}
+
+.roadmap-list li {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) 10rem;
+  gap: var(--space-5);
+  align-items: start;
+  padding: var(--space-5) 0;
+  border-bottom: var(--border-hairline);
+}
+
+.roadmap-code,
+.roadmap-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.roadmap-code {
+  color: var(--color-text-faint);
+}
+
+.roadmap-copy h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+.roadmap-copy p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.roadmap-status {
+  justify-self: end;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.roadmap-status[data-tone="complete"] {
+  color: var(--color-success);
+}
+
+.roadmap-status[data-tone="active"] {
+  color: var(--color-accent);
+}
+
+.roadmap-status[data-tone="pending"] {
+  color: var(--color-warning);
+}
+
+.roadmap-status[data-tone="gated"] {
+  color: var(--color-danger);
+}
+
 .faq-section {
   display: grid;
   grid-template-columns: 0.7fr 1.3fr;
@@ -703,6 +790,7 @@
 
   .loop-section,
   .status-section,
+  .roadmap-section,
   .faq-section {
     grid-template-columns: 1fr;
   }
@@ -769,6 +857,16 @@
 
   .context-note {
     grid-column: auto;
+  }
+
+  .roadmap-list li {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+  }
+
+  .roadmap-status {
+    grid-column: 2;
+    justify-self: start;
+    text-align: left;
   }
 
   .landing-cta {
@@ -841,6 +939,11 @@
   .status-ledger > div {
     grid-template-columns: 1fr;
     gap: var(--space-2);
+  }
+
+  .roadmap-list li {
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+    gap: var(--space-3);
   }
 
   .footer-topline {
