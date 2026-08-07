@@ -2,6 +2,8 @@
 
 helm is an open-source conversational operating system for AI trading. Users talk to Hermes; Hermes coordinates research, strategy validation, and proposals while helm owns deterministic mandates, policy, execution, reconciliation, and audit state.
 
+Public site: [sandeep-devarapalli.github.io/helm](https://sandeep-devarapalli.github.io/helm/)
+
 This repository uses the upstream [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime unchanged and connects a pinned [Vibe-Trading](https://github.com/HKUDS/Vibe-Trading) MCP runtime for curated finance tools. helm is not affiliated with Nous Research or HKUDS.
 
 ## Current status
@@ -86,17 +88,23 @@ pnpm dev
 uv run uvicorn helm.main:app --app-dir services/api --reload
 ```
 
-Open the Workbench:
+Open the landing page:
 
 ```zsh
 open http://localhost:5173
+```
+
+Open the Workbench:
+
+```zsh
+open http://localhost:5173/app
 ```
 
 To render a persisted conversation before authenticated workspace selection
 ships, pass one explicit workspace context:
 
 ```zsh
-open 'http://localhost:5173/?workspace=<uuid>'
+open 'http://localhost:5173/app?workspace=<uuid>'
 ```
 
 Run the complete Stage 1 foundation:

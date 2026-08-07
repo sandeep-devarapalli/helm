@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const webOrigin = `http://127.0.0.1:${process.env.HELM_E2E_WEB_PORT ?? "5173"}`;
+
 const workspaces = {
   empty: "11111111-1111-4111-8111-111111111111",
   reconnect: "22222222-2222-4222-8222-222222222222",
@@ -31,7 +33,7 @@ type TestState = {
 };
 
 function url(workspaceId: string) {
-  return `/?workspace=${workspaceId}`;
+  return `/app?workspace=${workspaceId}`;
 }
 
 function monitorBrowserBoundary(page: Page) {
@@ -44,7 +46,7 @@ function monitorBrowserBoundary(page: Page) {
   page.on("request", (request) => {
     if (!["eventsource", "fetch", "xhr"].includes(request.resourceType())) return;
     const requestUrl = new URL(request.url());
-    if (requestUrl.origin !== "http://127.0.0.1:5173" || !requestUrl.pathname.startsWith("/api/")) {
+    if (requestUrl.origin !== webOrigin || !requestUrl.pathname.startsWith("/api/")) {
       unexpectedRequests.push(request.url());
       return;
     }
@@ -64,6 +66,45 @@ function monitorBrowserBoundary(page: Page) {
 
 test.beforeEach(async ({ request }) => {
   await request.post("/api/__test/reset");
+});
+
+test("public landing explains the investor outcome and current boundary without touching the API", async ({ page }) => {
+  const assertBoundary = monitorBrowserBoundary(page);
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "One place to research an idea, test the strategy, and keep control." })).toBeVisible();
+  await expect(page.getByText("Early product preview", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Keep the evidence, strategy, limits, and approval together." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Research an investment" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "U.S. stocks and ETFs" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Indian equities" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Crypto spot" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Listed commodity ETFs" })).toBeVisible();
+  await expect(page.getByText("Target coverage, not current market access.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Trading without human approval · investment advice · managing client capital", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "See what is complete, what is being built, and what remains gated." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Persistent Hermes conversation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Multi-market foundation" })).toBeVisible();
+  await expect(page.getByText(/^Verified [A-Z][a-z]+ \d{1,2}, \d{4}$/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Read the full roadmap on GitHub" })).toHaveAttribute("href", "https://github.com/sandeep-devarapalli/helm/blob/main/docs/roadmap.md");
+  await expect(page.getByRole("link", { name: "Explore current Workbench" }).first()).toHaveAttribute("href", "/app");
+  assertBoundary([]);
+});
+
+test("public landing fits a narrow mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "One place to research an idea, test the strategy, and keep control." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "One disciplined workflow across the assets investors already consider." })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("legacy workspace links redirect to the canonical Workbench route", async ({ page }) => {
+  await page.goto(`/?workspace=${workspaces.foreign}`);
+
+  await expect(page).toHaveURL(`/app?workspace=${workspaces.foreign}`);
+  await expect(page.getByText("Foreign workspace private evidence.", { exact: true })).toBeVisible();
 });
 
 test("first message creates one conversation and one bounded run", async ({ page, request }) => {
@@ -193,7 +234,7 @@ test("workspace context never exposes or submits against another workspace", asy
   await request.post(`/api/__test/runs/${runIds.empty}/release`);
   await expect(page.getByText("Succeeded", { exact: true })).toBeVisible();
 
-  await page.goto("/?workspace=99999999-9999-4999-8999-999999999999");
+  await page.goto("/app?workspace=99999999-9999-4999-8999-999999999999");
   await expect(page.getByText("Conversation unavailable", { exact: true })).toBeVisible();
   await expect(page.getByText("Foreign workspace private evidence.", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Message Hermes" })).toBeDisabled();

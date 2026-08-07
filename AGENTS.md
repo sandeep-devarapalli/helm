@@ -34,6 +34,13 @@ The upstream `NousResearch/hermes-agent` runtime is required and used unchanged.
 ## Code and repository rules
 
 - Keep changes small and focused. Do not add later-stage behavior to foundation work.
+- Public landing pages are visitor-first: lead with the problem, audience,
+  outcomes, use cases, product mechanism, market possibilities, and trust.
+  Keep implementation phases and engineering status in a compact secondary
+  transparency section rather than the hero or primary narrative.
+- Public roadmap status must be derived from `docs/roadmap.md`. Update the
+  canonical roadmap first, and fail verification if a milestone loses its
+  public status mapping.
 - Prefer existing files and direct code over new abstractions.
 - Use `packages/ui` tokens and primitives; numbers remain mono and Lucide is the only icon set.
 - Never hand-edit generated files in `examples/design-reference/`.

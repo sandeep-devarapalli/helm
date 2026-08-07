@@ -25,6 +25,7 @@ import {
   subscribeToRunEvents,
   type PublicRunEvent,
 } from "./workbench-stream";
+import "./workbench.css";
 
 type HealthState = "checking" | "ready" | "unavailable";
 
