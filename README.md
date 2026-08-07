@@ -2,6 +2,8 @@
 
 helm is an open-source conversational operating system for AI trading. Users talk to Hermes; Hermes coordinates research, strategy validation, and proposals while helm owns deterministic mandates, policy, execution, reconciliation, and audit state.
 
+Public site: [sandeep-devarapalli.github.io/helm](https://sandeep-devarapalli.github.io/helm/)
+
 This repository uses the upstream [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime unchanged and connects a pinned [Vibe-Trading](https://github.com/HKUDS/Vibe-Trading) MCP runtime for curated finance tools. helm is not affiliated with Nous Research or HKUDS.
 
 ## Current status

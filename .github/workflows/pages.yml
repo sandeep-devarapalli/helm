@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - codex/landing-v1
   workflow_dispatch:
 
 permissions:
