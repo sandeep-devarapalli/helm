@@ -86,17 +86,23 @@ pnpm dev
 uv run uvicorn helm.main:app --app-dir services/api --reload
 ```
 
-Open the Workbench:
+Open the landing page:
 
 ```zsh
 open http://localhost:5173
+```
+
+Open the Workbench:
+
+```zsh
+open http://localhost:5173/app
 ```
 
 To render a persisted conversation before authenticated workspace selection
 ships, pass one explicit workspace context:
 
 ```zsh
-open 'http://localhost:5173/?workspace=<uuid>'
+open 'http://localhost:5173/app?workspace=<uuid>'
 ```
 
 Run the complete Stage 1 foundation:
