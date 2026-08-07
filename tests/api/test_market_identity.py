@@ -99,7 +99,7 @@ def test_structural_cross_market_fixtures_keep_symbols_venue_scoped(
                     Listing(
                         instrument_id=bitcoin.id,
                         venue_id=coinbase.id,
-                        venue_symbol="BTC/USD",
+                        venue_symbol="BTC-USD",
                         quote_currency_code="USD",
                         price_increment=Decimal("0.01"),
                         quantity_increment=Decimal("0.00000001"),
@@ -140,7 +140,7 @@ def test_structural_cross_market_fixtures_keep_symbols_venue_scoped(
     assert [(row[0], row[1], row[3], row[4]) for row in rows] == [
         ("ALT_US", "AAPL", "common_stock", "USD"),
         ("ARCX", "GLD", "etf", "USD"),
-        ("COINBASE", "BTC/USD", "crypto_asset", "USD"),
+        ("COINBASE", "BTC-USD", "crypto_asset", "USD"),
         ("XNAS", "AAPL", "common_stock", "USD"),
         ("XNSE", "RELIANCE", "common_stock", "INR"),
     ]
@@ -178,6 +178,47 @@ def test_duplicate_symbol_on_one_venue_is_rejected(api_context) -> None:
                         instrument_id=second.id,
                         venue_id=venue.id,
                         venue_symbol="SAME",
+                        quote_currency_code="USD",
+                        price_increment=Decimal("0.01"),
+                        quantity_increment=Decimal("1"),
+                    ),
+                ]
+            )
+            with pytest.raises(IntegrityError):
+                await session.commit()
+
+    asyncio.run(exercise())
+
+
+def test_whitespace_cannot_bypass_same_venue_symbol_uniqueness(api_context) -> None:
+    async def exercise() -> None:
+        async with api_context.session_factory() as session:
+            currency = Currency(code="USD", name="US dollar", minor_unit=2)
+            venue = Venue(
+                code="XNAS",
+                mic="XNAS",
+                kind=VenueKind.SECURITIES_EXCHANGE.value,
+                name="Nasdaq fixture venue",
+                timezone="America/New_York",
+            )
+            first = Instrument(kind=InstrumentKind.COMMON_STOCK.value, name="First")
+            second = Instrument(kind=InstrumentKind.COMMON_STOCK.value, name="Second")
+            session.add_all([currency, venue, first, second])
+            await session.flush()
+            session.add_all(
+                [
+                    Listing(
+                        instrument_id=first.id,
+                        venue_id=venue.id,
+                        venue_symbol="SAME",
+                        quote_currency_code="USD",
+                        price_increment=Decimal("0.01"),
+                        quantity_increment=Decimal("1"),
+                    ),
+                    Listing(
+                        instrument_id=second.id,
+                        venue_id=venue.id,
+                        venue_symbol=" SAME ",
                         quote_currency_code="USD",
                         price_increment=Decimal("0.01"),
                         quantity_increment=Decimal("1"),

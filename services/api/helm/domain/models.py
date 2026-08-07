@@ -193,6 +193,10 @@ class Listing(Base):
             "length(trim(venue_symbol)) between 1 and 64",
             name="venue_symbol_length",
         ),
+        CheckConstraint(
+            "venue_symbol = trim(venue_symbol)",
+            name="venue_symbol_canonical",
+        ),
         CheckConstraint("price_increment > 0", name="price_increment_positive"),
         CheckConstraint(
             "quantity_increment > 0",

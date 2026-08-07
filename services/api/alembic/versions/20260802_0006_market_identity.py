@@ -122,6 +122,10 @@ def upgrade() -> None:
             "length(trim(venue_symbol)) between 1 and 64",
             name=op.f("ck_listings_venue_symbol_length"),
         ),
+        sa.CheckConstraint(
+            "venue_symbol = trim(venue_symbol)",
+            name=op.f("ck_listings_venue_symbol_canonical"),
+        ),
         sa.ForeignKeyConstraint(
             ("instrument_id",),
             ("instruments.id",),
