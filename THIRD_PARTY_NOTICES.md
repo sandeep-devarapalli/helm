@@ -39,6 +39,6 @@ The following upstream projects run as pinned external packages or containers. T
 | Project | License | Copyright | Source |
 |---|---|---|---|
 | Vibe-Trading `v0.1.11` | MIT | 2026 Vibe-Trading Contributors | https://github.com/HKUDS/Vibe-Trading/tree/v0.1.11 |
-| Hermes Agent `v2026.7.7.2` | MIT | 2025 Nous Research | https://github.com/NousResearch/hermes-agent/tree/v2026.7.7.2 |
+| Hermes Agent `v2026.8.19` | MIT | 2025 Nous Research | https://github.com/NousResearch/hermes-agent/tree/v2026.7.7.2 |
 
 No affiliation with or endorsement by these projects is implied.

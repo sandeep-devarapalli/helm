@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "runtime_release": "v2026.7.7.2",
-  "runtime_commit": "9de9c25f620ff7f1ce0fd5457d596052d5159596",
-  "verified_at": "2026-07-30",
-  "result": "m2-memory-approvals",
+  "runtime_release": "v2026.8.19",
+  "runtime_commit": "fcbd1076a93841fa88855acce810e342a5b78101",
+  "verified_at": null,
+  "result": "pending",
   "contracts": {
     "run_instructions": {
       "request_field": "instructions",

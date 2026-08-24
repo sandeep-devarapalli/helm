@@ -22,7 +22,7 @@ services:
     environment:
       HELM_ENVIRONMENT: local
       HELM_DATABASE_URL: ${HELM_DATABASE_URL:-postgresql+asyncpg://helm:helm-local-only@postgres:5432/helm}
-      HELM_HERMES_VERSION: v2026.7.7.2
+      HELM_HERMES_VERSION: v2026.8.19
       HELM_VIBE_VERSION: v0.1.11
       HELM_HERMES_BASE_URL: http://hermes:8642
       HELM_HERMES_API_KEY: ${HERMES_API_KEY:-helm-local-development-only}
@@ -86,7 +86,7 @@ services:
       - hermes-data:/target
 
   hermes:
-    image: docker.io/nousresearch/hermes-agent:v2026.7.7.2@sha256:9c841866021c54c4596849f6135717e8a4d52ba510b7f52c50aef1de1a283973
+    image: docker.io/nousresearch/hermes-agent:v2026.8.19@sha256:3811ed13da874fba2ac99b6d492db9a203d34cb6dccf90d886948c00d0ccec09
     restart: unless-stopped
     environment:
       API_SERVER_ENABLED: "true"

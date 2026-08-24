@@ -1,12 +1,12 @@
 {
   "runtime": "hermes-agent",
   "source": "https://github.com/NousResearch/hermes-agent",
-  "release": "v2026.7.7.2",
-  "commit": "9de9c25f620ff7f1ce0fd5457d596052d5159596",
-  "image": "docker.io/nousresearch/hermes-agent:v2026.7.7.2",
-  "digest": "sha256:9c841866021c54c4596849f6135717e8a4d52ba510b7f52c50aef1de1a283973",
+  "release": "v2026.8.19",
+  "commit": "fcbd1076a93841fa88855acce810e342a5b78101",
+  "image": "docker.io/nousresearch/hermes-agent:v2026.8.19",
+  "digest": "sha256:3811ed13da874fba2ac99b6d492db9a203d34cb6dccf90d886948c00d0ccec09",
   "license": "MIT",
   "license_url": "https://github.com/NousResearch/hermes-agent/blob/v2026.7.7.2/LICENSE",
-  "verified_at": "2026-07-30",
-  "compatibility": "m2-memory-approvals"
+  "verified_at": "2026-08-24",
+  "compatibility": "pending"
 }
